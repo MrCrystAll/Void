@@ -144,7 +144,7 @@ class AstraObs(AdvancedObs):
         #     self.lookahead_steps
         # ]))
 
-        # base_obs = np.concatenate((base_obs, timers))
+        base_obs = np.concatenate((base_obs, timers))
         # print(f" ========= Player team : {player.team_num} | Car id {player.car_id} ========= ")
         # AstraObs.print_obs(base_obs)
 

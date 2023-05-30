@@ -1,0 +1,18 @@
+{% extends "header.html" %}
+<html lang="en">
+<head>
+    <script src="{{ url_for("static/js/index.js") }}" type="text/javascript"></script>
+    <script>
+        console.log("Test")
+    </script>
+    <title>{% block title %} Home {% endblock %}</title>
+</head>
+    {% block body %}
+<body>
+    <h1>Artemis</h1>
+    <p>Artemis is a 1s, 2s and 3s bot</p>
+</body>
+{% endblock %}
+
+
+</html>

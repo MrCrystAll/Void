@@ -1213,6 +1213,7 @@ class DynamicScoredReplaySetter(ReplaySetter):
         super(DynamicScoredReplaySetter, self).reset(state_wrapper)
 
 
+
 all_states = [DefaultState()]
 states = [
     CustomStateSetter(),
@@ -1220,11 +1221,11 @@ states = [
     ShotState(),
     SaveState(),
     AerialBallState(),
-    DynamicScoredReplaySetter(
-        "replays/states_scores_duels.npz",
-        "replays/states_scores_doubles.npz",
-        "replays/states_scores_standard.npz"
-    )
+    # DynamicScoredReplaySetter(
+    #     "replays/states_scores_duels.npz",
+    #     "replays/states_scores_doubles.npz",
+    #     "replays/states_scores_standard.npz"
+    # )
 ]
 
 
