@@ -1,12 +1,7 @@
-import warnings
-from typing import Iterable
-
 import rlgym_sim.utils.common_values
-from rlgym_sim.utils.terminal_conditions.common_conditions import GoalScoredCondition
 from rlgym_sim.utils import TerminalCondition
 from rlgym_sim.utils.gamestates import GameState
-from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, NoTouchTimeoutCondition, \
-    BallTouchedCondition
+
 
 class BallGroundCondition(TerminalCondition):
 
@@ -15,6 +10,7 @@ class BallGroundCondition(TerminalCondition):
 
     def is_terminal(self, current_state: GameState) -> bool:
         return current_state.ball.position.item(2) < rlgym_sim.utils.common_values.BALL_RADIUS + 100
+
 
 class BallTouchedAfterSteps(TerminalCondition):
 

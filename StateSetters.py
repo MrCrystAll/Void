@@ -1,8 +1,6 @@
 import math
 import random
-import warnings
 from collections import namedtuple
-from typing import Iterable, Union, Sequence, List
 
 import numpy as np
 from rlgym_sim.utils.common_values import CAR_MAX_SPEED, SIDE_WALL_X, BACK_WALL_Y, CEILING_Z, BALL_RADIUS, \

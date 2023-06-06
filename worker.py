@@ -10,7 +10,7 @@ from rocket_learn.rollout_generator.redis.redis_rollout_worker import RedisRollo
 from StateSetters import ProbabilisticStateSetter
 from config import Configuration, version_dict
 
-r = Redis(host="127.0.0.1", username="test-bot", password=os.environ["REDIS_PASSWORD"], port=6379, db=4)
+r = Redis(host="127.0.0.1", username="test-bot", password=os.environ["REDIS_PASSWORD"], port=6379, db=0)
 
 
 def target(match, config: Configuration):
@@ -70,13 +70,11 @@ if __name__ == "__main__":
         ), match_config
 
     all_instances = {
-        "aerial": 1,
-        "recovery": 1,
-        "default": 1
+        "aerial": 3,
+        "recovery": 3,
     }
 
-    for index, data in enumerate(zip(all_instances.keys(), all_instances.values())):
-        name, nb_instances = data
+    for name, nb_instances in zip(all_instances.keys(), all_instances.values()):
         if name not in version_dict:
             warnings.warn(f"Version \"{name}\" doesn't exist, create it or use the already existing keys in config.py : "
                           f"{list(version_dict.keys())}.\n"

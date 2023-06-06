@@ -43,12 +43,12 @@ if __name__ == "__main__":
     # OR HARDCODE IT IF YOU ARE NOT SHARING YOUR SOURCE FILES
 
     wandb.login(key=os.environ["WANDB_KEY"])
-    logger = wandb.init(project="demo", entity="cryy_salt")
+    logger = wandb.init(project="Artemis-MultiModel", entity="cryy_salt")
     logger.name = "Artemis"
 
     # LINK TO THE REDIS SERVER YOU SHOULD HAVE RUNNING (USE THE SAME PASSWORD YOU SET IN THE REDIS
     # CONFIG)
-    redis = Redis(host="127.0.0.1", password=os.environ["REDIS_PASSWORD"], username="test-bot", port=6379, db=4)
+    redis = Redis(host="127.0.0.1", password=os.environ["REDIS_PASSWORD"], username="test-bot", port=6379, db=0)
 
 
     # ** ENSURE OBSERVATION, REWARD, AND ACTION CHOICES ARE THE SAME IN THE WORKER **

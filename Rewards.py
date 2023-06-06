@@ -13,8 +13,6 @@ class DistancePlayerToBall(RewardFunction):
 
     def reset(self, initial_state: GameState):
         if len(self.data) != 0:
-            print("\r"*75, end="\r")
-            print(f"Avg : {np.mean(self.data)} | Best : {min(self.data)} | Worst : {max(self.data)}", end="\r")
             self.data.clear()
 
     def get_reward(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> float:
