@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     wandb.login(key=os.environ["WANDB_KEY"])
     logger = wandb.init(project="demo", entity="cryy_salt")
-    logger.name = "Astra_512_Neurons_3_Hidden_Tuned_State_Setter_Run"
+    logger.name = "Artemis"
 
     # LINK TO THE REDIS SERVER YOU SHOULD HAVE RUNNING (USE THE SAME PASSWORD YOU SET IN THE REDIS
     # CONFIG)
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     # -model_every SPECIFIES HOW OFTEN OLD VERSIONS ARE SAVED TO REDIS. THESE ARE USED FOR TRUESKILL
     # COMPARISON AND TRAINING AGAINST PREVIOUS VERSIONS
     # -clear DELETE REDIS ENTRIES WHEN STARTING UP (SET TO FALSE TO CONTINUE WITH OLD AGENTS)
-    rollout_gen = RedisRolloutGenerator("Normal_Astra", redis, obs, rew, act,
+    rollout_gen = RedisRolloutGenerator("Artemis", redis, obs, rew, act,
                                         logger=logger,
                                         save_every=100,
                                         model_every=100,

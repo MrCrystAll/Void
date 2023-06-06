@@ -14,7 +14,7 @@ r = Redis(host="127.0.0.1", username="test-bot", password=os.environ["REDIS_PASS
 
 
 def target(match, config: Configuration):
-    RedisRolloutWorker(r, "astra_512_neurons_3_hidden_tuned_state_setter", match,
+    RedisRolloutWorker(r, "artemis", match,
                        past_version_prob=config.past_version_prob,
                        evaluation_prob=config.evaluation_prob,
                        sigma_target=config.sigma_target,
@@ -24,7 +24,7 @@ def target(match, config: Configuration):
                        streamer_mode=config.streamer_mode,
                        send_gamestates=config.send_gamestates,
                        force_paging=config.force_paging,
-                       local_cache_name="astra_512_neurons_3_hidden_tuned_state_setter_model_db").run()
+                       local_cache_name="artemis_model_db").run()
 
 
 if __name__ == "__main__":
@@ -77,11 +77,15 @@ if __name__ == "__main__":
 
     for index, data in enumerate(zip(all_instances.keys(), all_instances.values())):
         name, nb_instances = data
+        if name not in version_dict:
+            warnings.warn(f"Version \"{name}\" doesn't exist, create it or use the already existing keys in config.py : "
+                          f"{list(version_dict.keys())}.\n"
+                          f"Setting version to default", category=SyntaxWarning)
+            name = "default"
 
         match, config = create_match(name)
 
         for i in range(nb_instances):
-
             process_name = f"{name.capitalize()}-{i + 1}"
 
             print(f"Starting process {process_name}")
