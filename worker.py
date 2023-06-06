@@ -1,27 +1,13 @@
 import os
-from typing import Any
+import warnings
 
-import numpy
 from redis import Redis
-from rlgym.utils.action_parsers.discrete_act import DiscreteAction
-from rlgym.utils.gamestates import PlayerData
-from rlgym.utils.reward_functions.common_rewards import VelocityBallToGoalReward, EventReward, TouchBallReward, \
-    FaceBallReward
-from rlgym.utils.terminal_conditions.common_conditions import GoalScoredCondition, TimeoutCondition
 from rlgym_sim.envs import Match
-from rlgym_sim.utils.gamestates import GameState
 from rlgym_tools.sb3_utils.sb3_log_reward import SB3CombinedLogReward
 from rocket_learn.rollout_generator.redis.redis_rollout_worker import RedisRolloutWorker
 
-from AstraObs import AstraObs
 from StateSetters import ProbabilisticStateSetter
-
-
-class ExpandAdvancedObs(AstraObs):
-    def build_obs(self, player: PlayerData, state: GameState, previous_action: numpy.ndarray) -> Any:
-        obs = super(ExpandAdvancedObs, self).build_obs(player, state, previous_action)
-        return numpy.expand_dims(obs, 0)
-
+from config import Configuration, version_dict
 
 if __name__ == "__main__":
     """
@@ -38,29 +24,33 @@ if __name__ == "__main__":
 
     torch.set_num_threads(1)
 
-    # BUILD THE ROCKET LEAGUE MATCH THAT WILL USED FOR TRAINING
-    # -ENSURE OBSERVATION, REWARD, AND ACTION CHOICES ARE THE SAME IN THE WORKER
-    match = Match(
-        spawn_opponents=True,
-        team_size=3,
-        state_setter=ProbabilisticStateSetter(),
-        obs_builder=ExpandAdvancedObs(),
-        action_parser=DiscreteAction(),
-        terminal_conditions=[TimeoutCondition(round(2000)),
-                             GoalScoredCondition()],
-        reward_function=SB3CombinedLogReward(
-            reward_functions=(
-                VelocityBallToGoalReward(),
-                EventReward(
-                    goal=100,
-                    concede=-100,
-                    save=50,
-                ),
-                FaceBallReward(),
-                TouchBallReward(),
+    def create_match(version):
+
+        if version not in version_dict:
+            warnings.warn(f"Version '{version}' is not in the config dictionary, "
+                          f"possible keys are {list(version_dict.keys())}, switching version to default")
+            version = "default"
+
+        match_config: Configuration = version_dict[version]
+
+        return Match(
+            team_size=match_config.team_size,
+            reward_function=SB3CombinedLogReward(
+                reward_functions=match_config.rewards[0],
+                reward_weights=match_config.rewards[1]
             ),
-            reward_weights=(1.0, 2.0, 1.0, 1.0)),
-    )
+            spawn_opponents=match_config.spawn_opponents,
+            terminal_conditions=match_config.terminal_conditions,
+            obs_builder=match_config.obs_builder,
+            state_setter=ProbabilisticStateSetter(
+                verbose=1,
+                states=match_config.state_setter[0],
+                probs=match_config.state_setter[1]
+            ),
+            action_parser=match_config.action_parser,  # Discrete > Continuous don't @ me
+        )
+
+    match = create_match("aerial")
 
     # LINK TO THE REDIS SERVER YOU SHOULD HAVE RUNNING (USE THE SAME PASSWORD YOU SET IN THE REDIS
     # CONFIG)

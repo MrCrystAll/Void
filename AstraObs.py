@@ -144,7 +144,7 @@ class AstraObs(AdvancedObs):
         #     self.lookahead_steps
         # ]))
 
-        # base_obs = np.concatenate((base_obs, timers))
+        base_obs = np.concatenate((base_obs, timers))
         # print(f" ========= Player team : {player.team_num} | Car id {player.car_id} ========= ")
         # AstraObs.print_obs(base_obs)
 
@@ -222,3 +222,9 @@ class AstraObs(AdvancedObs):
 
     def create_dummy_players(self, base_obs):
         return np.concatenate((base_obs, [0] * 31))
+
+
+class ExpandAdvancedObs(AstraObs):
+    def build_obs(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> Any:
+        obs = super(ExpandAdvancedObs, self).build_obs(player, state, previous_action)
+        return np.expand_dims(obs, 0)
