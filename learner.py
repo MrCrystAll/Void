@@ -3,6 +3,8 @@ from typing import Any
 
 import numpy
 import torch.jit
+from rocket_learn.agent.actor_critic_agent import ActorCriticAgent
+
 import wandb
 from redis import Redis
 from rlgym.utils.action_parsers.discrete_act import DiscreteAction
@@ -41,12 +43,12 @@ if __name__ == "__main__":
     # OR HARDCODE IT IF YOU ARE NOT SHARING YOUR SOURCE FILES
 
     wandb.login(key=os.environ["WANDB_KEY"])
-    logger = wandb.init(project="demo", entity="cryy_salt")
-    logger.name = "Astra_512_Neurons_3_Hidden_Tuned_State_Setter_Run"
+    logger = wandb.init(project="Artemis-MultiModel", entity="cryy_salt")
+    logger.name = "Artemis"
 
     # LINK TO THE REDIS SERVER YOU SHOULD HAVE RUNNING (USE THE SAME PASSWORD YOU SET IN THE REDIS
     # CONFIG)
-    redis = Redis(host="127.0.0.1", password=os.environ["REDIS_PASSWORD"], username="test-bot", port=6379, db=3)
+    redis = Redis(host="127.0.0.1", password=os.environ["REDIS_PASSWORD"], username="test-bot", port=6379, db=0)
 
 
     # ** ENSURE OBSERVATION, REWARD, AND ACTION CHOICES ARE THE SAME IN THE WORKER **
@@ -113,14 +115,14 @@ if __name__ == "__main__":
     ])
 
     # PPO REQUIRES AN ACTOR/CRITIC AGENT
-    agent = torch.load("exit_save.zip")
+    agent = ActorCriticAgent(actor, critic, optim)
 
     # THE ROLLOUT GENERATOR CAPTURES INCOMING DATA THROUGH REDIS AND PASSES IT TO THE LEARNER.
     # -save_every SPECIFIES HOW OFTEN REDIS DATABASE IS BACKED UP TO DISK
     # -model_every SPECIFIES HOW OFTEN OLD VERSIONS ARE SAVED TO REDIS. THESE ARE USED FOR TRUESKILL
     # COMPARISON AND TRAINING AGAINST PREVIOUS VERSIONS
     # -clear DELETE REDIS ENTRIES WHEN STARTING UP (SET TO FALSE TO CONTINUE WITH OLD AGENTS)
-    rollout_gen = RedisRolloutGenerator("Normal_Astra", redis, obs, rew, act,
+    rollout_gen = RedisRolloutGenerator("Artemis", redis, obs, rew, act,
                                         logger=logger,
                                         save_every=100,
                                         model_every=100,

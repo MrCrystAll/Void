@@ -60,10 +60,10 @@ class AstraObs(AdvancedObs):
             ang_vel=_nparray_to_vec(state.ball.angular_velocity)
         ))
 
-        self.lookahead_steps = random.randint(3, 10)
+        # self.lookahead_steps = random.randint(3, 10)
 
-        a.step(self.tick_skip * self.lookahead_steps)
-        self.ball_prediction = a.ball.get_state()
+        # a.step(self.tick_skip * self.lookahead_steps)
+        # self.ball_prediction = a.ball.get_state()
 
         # print(
         #     f"From {state.ball.position} to {self.ball_prediction.pos} ({self.lookahead_steps * self.tick_skip} steps)")
@@ -131,10 +131,8 @@ class AstraObs(AdvancedObs):
 
         if player.team_num == constants.ORANGE_TEAM:
             timers = self.inverted_boosts_timers
-            ball_pred = _invert_ball_data(self.ball_prediction)
         else:
             timers = self.boosts_timers
-            ball_pred = self.ball_prediction
 
         # base_obs = np.concatenate((base_obs, [
         #     timers,
@@ -144,7 +142,7 @@ class AstraObs(AdvancedObs):
         #     self.lookahead_steps
         # ]))
 
-        # base_obs = np.concatenate((base_obs, timers))
+        base_obs = np.concatenate((base_obs, timers))
         # print(f" ========= Player team : {player.team_num} | Car id {player.car_id} ========= ")
         # AstraObs.print_obs(base_obs)
 
@@ -222,3 +220,9 @@ class AstraObs(AdvancedObs):
 
     def create_dummy_players(self, base_obs):
         return np.concatenate((base_obs, [0] * 31))
+
+
+class ExpandAdvancedObs(AstraObs):
+    def build_obs(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> Any:
+        obs = super(ExpandAdvancedObs, self).build_obs(player, state, previous_action)
+        return np.expand_dims(obs, 0)
