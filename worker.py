@@ -1,3 +1,4 @@
+from multiprocessing import Process
 import os
 import warnings
 
@@ -8,6 +9,23 @@ from rocket_learn.rollout_generator.redis.redis_rollout_worker import RedisRollo
 
 from StateSetters import ProbabilisticStateSetter
 from config import Configuration, version_dict
+
+r = Redis(host="127.0.0.1", username="test-bot", password=os.environ["REDIS_PASSWORD"], port=6379, db=4)
+
+
+def target(match, config: Configuration):
+    RedisRolloutWorker(r, "astra_512_neurons_3_hidden_tuned_state_setter", match,
+                       past_version_prob=config.past_version_prob,
+                       evaluation_prob=config.evaluation_prob,
+                       sigma_target=config.sigma_target,
+                       dynamic_gm=config.dynamic_gm,
+                       send_obs=config.send_obs,
+                       auto_minimize=config.auto_minimize,
+                       streamer_mode=config.streamer_mode,
+                       send_gamestates=config.send_gamestates,
+                       force_paging=config.force_paging,
+                       local_cache_name="astra_512_neurons_3_hidden_tuned_state_setter_model_db").run()
+
 
 if __name__ == "__main__":
     """
@@ -23,6 +41,7 @@ if __name__ == "__main__":
     import torch
 
     torch.set_num_threads(1)
+
 
     def create_match(version):
 
@@ -47,25 +66,23 @@ if __name__ == "__main__":
                 states=match_config.state_setter[0],
                 probs=match_config.state_setter[1]
             ),
-            action_parser=match_config.action_parser,  # Discrete > Continuous don't @ me
-        )
+            action_parser=match_config.action_parser
+        ), match_config
 
-    match = create_match("aerial")
+    all_instances = {
+        "aerial": 1,
+        "recovery": 1,
+        "default": 1
+    }
 
-    # LINK TO THE REDIS SERVER YOU SHOULD HAVE RUNNING (USE THE SAME PASSWORD YOU SET IN THE REDIS
-    # CONFIG)
-    r = Redis(host="127.0.0.1", username="test-bot", password=os.environ["REDIS_PASSWORD"], port=6379, db=3)
+    for index, data in enumerate(zip(all_instances.keys(), all_instances.values())):
+        name, nb_instances = data
 
-    # LAUNCH ROCKET LEAGUE AND BEGIN TRAINING
-    # -past_version_prob SPECIFIES HOW OFTEN OLD VERSIONS WILL BE RANDOMLY SELECTED AND TRAINED AGAINST
-    RedisRolloutWorker(r, "astra_512_neurons_3_hidden_tuned_state_setter", match,
-                       past_version_prob=.2,
-                       evaluation_prob=0.01,
-                       sigma_target=2,
-                       dynamic_gm=True,
-                       send_obs=True,
-                       auto_minimize=False,
-                       streamer_mode=False,
-                       send_gamestates=False,
-                       force_paging=False,
-                       local_cache_name="astra_512_neurons_3_hidden_tuned_state_setter_model_db").run()
+        match, config = create_match(name)
+
+        for i in range(nb_instances):
+
+            process_name = f"{name.capitalize()}-{i + 1}"
+
+            print(f"Starting process {process_name}")
+            Process(target=target, args=(match, config), name=process_name).start()
