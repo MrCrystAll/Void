@@ -49,12 +49,12 @@ class Learner:
         # OR HARDCODE IT IF YOU ARE NOT SHARING YOUR SOURCE FILES
 
         wandb.login(key=os.environ["WANDB_KEY"])
-        logger = wandb.init(project="demo", entity="cryy_salt")
-        logger.name = "Astra_512_Neurons_3_Hidden_Tuned_State_Setter_Run"
+        logger = wandb.init(project="Artemis-MultiModel", entity="cryy_salt")
+        logger.name = "Artemis"
 
         # LINK TO THE REDIS SERVER YOU SHOULD HAVE RUNNING (USE THE SAME PASSWORD YOU SET IN THE REDIS
         # CONFIG)
-        redis = Redis(host="127.0.0.1", password=os.environ["REDIS_PASSWORD"], username="test-bot", port=6379, db=3)
+        redis = Redis(host="127.0.0.1", password=os.environ["REDIS_PASSWORD"], username="test-bot", port=6379, db=1)
 
         # ** ENSURE OBSERVATION, REWARD, AND ACTION CHOICES ARE THE SAME IN THE WORKER **
         def obs():
@@ -125,12 +125,12 @@ class Learner:
         # -model_every SPECIFIES HOW OFTEN OLD VERSIONS ARE SAVED TO REDIS. THESE ARE USED FOR TRUESKILL
         # COMPARISON AND TRAINING AGAINST PREVIOUS VERSIONS
         # -clear DELETE REDIS ENTRIES WHEN STARTING UP (SET TO FALSE TO CONTINUE WITH OLD AGENTS)
-        rollout_gen = RedisRolloutGenerator("Normal_Astra", redis, obs, rew, act,
+        rollout_gen = RedisRolloutGenerator("Artemis", redis, obs, rew, act,
                                             logger=logger,
                                             save_every=100,
                                             model_every=100,
                                             stat_trackers=stat_trackers,
-                                            clear=False)
+                                            clear=True)
 
         # INSTANTIATE THE PPO TRAINING ALGORITHM
         alg = PPO(

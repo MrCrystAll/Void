@@ -1,5 +1,7 @@
 $(document).ready(function() {
-    console.log("Ready");
-})
+    var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port + "/")
 
-console.log("Test")
+    socket.on("reward_change", (data) => {
+        console.log(data)
+    })
+})

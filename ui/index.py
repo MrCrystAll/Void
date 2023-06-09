@@ -1,7 +1,5 @@
 from flask import Flask, render_template
 from flask_socketio import SocketIO
-
-from learner import Learner
 from multiprocessing import Process
 
 from worker import Worker
@@ -16,11 +14,12 @@ def index():
     return render_template("index.html")
 
 
+
 def rewards_changed(player, rewards):
     socket.emit("reward_change", {
         "rewards": rewards,
         "player": player
-    })
+    }, namespace="/")
 
 
 p = Process(target=Worker(rewards_changed).run, name="Worker")

@@ -48,7 +48,7 @@ class Worker:
         match = Match(
             spawn_opponents=True,
             team_size=3,
-            state_setter=ProbabilisticStateSetter(version="s"),
+            state_setter=ProbabilisticStateSetter(),
             obs_builder=ExpandAdvancedObs(),
             action_parser=DiscreteAction(),
             terminal_conditions=[TimeoutCondition(round(2000)),
@@ -65,16 +65,16 @@ class Worker:
                     TouchBallReward(),
                 ),
                 reward_weights=(1.0, 2.0, 1.0, 1.0),
-            reward_update=self.reward_update),
+                reward_update=self.reward_update),
         )
 
         # LINK TO THE REDIS SERVER YOU SHOULD HAVE RUNNING (USE THE SAME PASSWORD YOU SET IN THE REDIS
         # CONFIG)
-        r = Redis(host="127.0.0.1", username="test-bot", password=os.environ["REDIS_PASSWORD"], port=6379, db=3)
+        r = Redis(host="127.0.0.1", username="test-bot", password=os.environ["REDIS_PASSWORD"], port=6379, db=1)
 
         # LAUNCH ROCKET LEAGUE AND BEGIN TRAINING
         # -past_version_prob SPECIFIES HOW OFTEN OLD VERSIONS WILL BE RANDOMLY SELECTED AND TRAINED AGAINST
-        RedisRolloutWorker(r, "astra_512_neurons_3_hidden_tuned_state_setter", match,
+        RedisRolloutWorker(r, "Artemis", match,
                            past_version_prob=.2,
                            evaluation_prob=0.01,
                            sigma_target=2,
@@ -84,7 +84,7 @@ class Worker:
                            streamer_mode=False,
                            send_gamestates=False,
                            force_paging=False,
-                           local_cache_name="astra_512_neurons_3_hidden_tuned_state_setter_model_db").run()
+                           local_cache_name="artemis_model_db").run()
 
 
 if __name__ == "__main__":

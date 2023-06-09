@@ -1249,9 +1249,9 @@ class ProbabilisticStateSetter(StateSetter):
             shot_prob = 49
             save_prob = 49
             aerial_prob = 20
-            scored_replay_prob = 20
+            # scored_replay_prob = 20
 
-            all_probs = [random_location_prob, kickoff_prob, shot_prob, save_prob, aerial_prob, scored_replay_prob]
+            all_probs = [random_location_prob, kickoff_prob, shot_prob, save_prob, aerial_prob]
 
             selected_state = random.choices(states, weights=all_probs, k=1)[0]
         else:
