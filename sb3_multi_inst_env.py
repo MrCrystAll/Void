@@ -14,7 +14,6 @@ from stable_baselines3.common.vec_env.subproc_vec_env import _worker
 
 from rlgym_sim.envs import Match
 from rlgym_sim.gym import Gym
-from rlgym.gamelaunch import LaunchPreference
 
 class SB3MultipleInstanceEnv(SubprocVecEnv):
     """
