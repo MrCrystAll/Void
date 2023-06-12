@@ -1,12 +1,9 @@
 import re
 import warnings
 from collections import Counter
-from multiprocessing import Process
 
 import numpy as np
-from rlgym_sim.envs import Match
 from rlgym_tools.sb3_utils.sb3_log_reward import SB3CombinedLogReward, SB3CombinedLogRewardCallback
-from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import VecMonitor, VecNormalize, VecCheckNan
 from stable_baselines3.ppo import MlpPolicy
@@ -16,6 +13,7 @@ from StateSetters import ProbabilisticStateSetter
 from config import version_dict, Configuration
 from match import DynamicGMMatch
 from sb3_multi_inst_env import SB3MultipleInstanceEnv
+
 
 class Worker:
     frame_skip = 8  # Number of ticks to repeat an action
@@ -77,7 +75,7 @@ class Worker:
     def run(self):
         try:
             model = MyPPO.load(
-                f"models/{Worker.current_model}/exit_save.zip",
+                f"models/exit_save.zip",
                 self.env,
                 device="cuda",
                 custom_objects={"num_envs": self.env.num_envs}
@@ -129,8 +127,8 @@ class Worker:
         reward_legends = rewards_to_text(all_rewards)
 
         # may need to reset timesteps when you're running a different number of instances than when you saved the model
-        callback = CheckpointCallback(round(5_000_000 / self.env.num_envs), save_path=Worker.current_model,
-                                      name_prefix=f"rl_model_{Worker.current_model}")
+        callback = CheckpointCallback(round(5_000_000 / self.env.num_envs), save_path="models",
+                                      name_prefix=f"rl_model")
 
         try:
             mmr_model_target_count = model.num_timesteps + Worker.mmr_save_frequency
