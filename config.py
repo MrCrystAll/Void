@@ -11,11 +11,17 @@ from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutConditi
 from AstraObs import ExpandAdvancedObs, AstraObs
 from Rewards import KickOffReward, EpisodeLengthReward, DistancePlayerToBall
 from StateSetters import AerialBallState, SaveState, ShotState, DefaultState, CustomStateSetter, StandingBallState, \
-    AirDribble2Touch, HalfFlip, Curvedash, RandomEvenRecovery, Chaindash, Walldash, Wavedash, RecoverySetter
+    AirDribble2Touch, HalfFlip, Curvedash, RandomEvenRecovery, Chaindash, Walldash, Wavedash, RecoverySetter, \
+    DynamicScoredReplaySetter
 from TerminalConditions import BallGroundCondition, BallTouchedAfterSteps
 
 fps = 120 // 8
 
+dynamic_state_setter = DynamicScoredReplaySetter(
+        "replays/states_scores_duels.npz",
+        "replays/states_scores_doubles.npz",
+        "replays/states_scores_standard.npz"
+    )
 
 class Configuration:
     def __init__(self,
@@ -57,8 +63,8 @@ class Configuration:
 
 version_dict = {
     "default": Configuration(
-        state_setter=[[CustomStateSetter(), DefaultState(), ShotState(), SaveState(), AerialBallState()],
-                      [1, 1, 49, 49, 20]],
+        state_setter=[[CustomStateSetter(), DefaultState(), ShotState(), SaveState(), AerialBallState(), dynamic_state_setter],
+                      [1, 1, 49, 49, 20, 100]],
         terminal_conditions=[TimeoutCondition(fps * 300), NoTouchTimeoutCondition(fps * 45), GoalScoredCondition()],
         rewards=[[EventReward(goal=100, concede=-100, touch=10, save=50, shot=50), FaceBallReward(),
                   LiuDistanceBallToGoalReward(), VelocityBallToGoalReward()], [1.0, 0.7, 1.4, 1]]

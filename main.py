@@ -17,7 +17,6 @@ from config import version_dict, Configuration
 from match import DynamicGMMatch
 from sb3_multi_inst_env import SB3MultipleInstanceEnv
 
-
 class Worker:
     frame_skip = 8  # Number of ticks to repeat an action
     half_life_seconds = 5  # Easier to conceptualize, after this many seconds the reward discount is 0.5
@@ -46,7 +45,7 @@ class Worker:
         self.env = VecNormalize(self.env, norm_obs=False, gamma=Worker.gamma)  # Highly recommended, normalizes rewards
 
     def exit_save(self, model):
-        model.save(f"models/{Worker.current_model}/exit_save")
+        model.save(f"models/exit_save")
 
     def create_match(self, version):
 
@@ -77,7 +76,7 @@ class Worker:
 
     def run(self):
         try:
-            model = PPO.load(
+            model = MyPPO.load(
                 f"models/{Worker.current_model}/exit_save.zip",
                 self.env,
                 device="cuda",
@@ -147,7 +146,7 @@ class Worker:
             print("Exiting training")
 
         print("Saving model")
-        # self.exit_save(model)
+        self.exit_save(model)
         print("Save complete")
 
 
