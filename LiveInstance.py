@@ -1,11 +1,15 @@
 import os
 import pickle
 
+import numpy as np
 import rlgym
+import rlgym_sim
 import torch
 from redis.client import Redis
 from rlgym_sim.utils.reward_functions.common_rewards import ConstantReward
+from stable_baselines3.common.utils import obs_as_tensor
 
+from MyPPO import MyPPO
 from StateSetters import ProbabilisticStateSetter
 from config import version_dict, Configuration
 
@@ -13,10 +17,8 @@ version = "recovery"
 
 env_config: Configuration = version_dict[version]
 
-r = Redis(host="127.0.0.1", username="test-bot", password=os.environ["REDIS_PASSWORD"], port=6379, db=0)
-
-model = r.get("model-latest")
-model = pickle.loads(model)
+# If it can't load, let it crash, don't create a new model
+model = MyPPO.load("models/exit_save.zip")
 
 env = rlgym.make(
     game_speed=1,
@@ -34,15 +36,13 @@ env = rlgym.make(
 )
 
 obs = env.reset()
-obs = torch.Tensor(obs)
 
 while True:
     try:
-        action_space = model.get_action_distribution(obs)
-        action = model.sample_action(action_space, deterministic=True)
-        action = action.numpy()
+        actions, _, _ = model.policy(obs_as_tensor(np.array(obs), torch.device("cuda")))
+        actions = actions.cpu().numpy()
 
-        obs, _, terminal, _ = env.step(action)
+        obs, _, terminal, _ = env.step(actions)
         obs = torch.Tensor(obs)
 
         if terminal:

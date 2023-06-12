@@ -90,7 +90,8 @@ version_dict = {
         rewards=[[TouchBallReward(), VelocityPlayerToBallReward(), VelocityBallToGoalReward(), EpisodeLengthReward(),
                   DistancePlayerToBall()], [10, 3, .2, .03, .1]],
         team_size=1,
-        dynamic_gm=False
+        dynamic_gm=False,
+        spawn_opponents=False
     )
 
 }
