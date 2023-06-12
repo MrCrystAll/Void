@@ -8,7 +8,7 @@ from rlgym_sim.utils.reward_functions.common_rewards import EventReward, FaceBal
 from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, NoTouchTimeoutCondition, \
     GoalScoredCondition, BallTouchedCondition
 
-from AstraObs import ExpandAdvancedObs
+from AstraObs import ExpandAdvancedObs, AstraObs
 from Rewards import KickOffReward, EpisodeLengthReward, DistancePlayerToBall
 from StateSetters import AerialBallState, SaveState, ShotState, DefaultState, CustomStateSetter, StandingBallState, \
     AirDribble2Touch, HalfFlip, Curvedash, RandomEvenRecovery, Chaindash, Walldash, Wavedash, RecoverySetter
@@ -23,7 +23,7 @@ class Configuration:
                  terminal_conditions,
                  rewards,
                  action_parser: ActionParser = DiscreteAction(),
-                 obs_builder: ObsBuilder = ExpandAdvancedObs(),
+                 obs_builder: ObsBuilder = AstraObs(),
                  team_size: int = 3,
                  spawn_opponents: bool = True,
                  dynamic_gm: bool = True,
