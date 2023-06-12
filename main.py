@@ -11,6 +11,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import VecMonitor, VecNormalize, VecCheckNan
 from stable_baselines3.ppo import MlpPolicy
 
+from MyPPO import MyPPO
 from StateSetters import ProbabilisticStateSetter
 from config import version_dict, Configuration
 from match import DynamicGMMatch
@@ -94,7 +95,7 @@ class Worker:
                     vf=[512, 512, 512])],
             )
 
-            model = PPO(
+            model = MyPPO(
                 MlpPolicy,
                 self.env,
                 n_epochs=10,  # PPO calls for multiple epochs
