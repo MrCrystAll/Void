@@ -69,7 +69,8 @@ if __name__ == "__main__":
 
     all_matches = []
     for model, n in zip(models.keys(), models.values()):
-        all_matches.append(create_match(model))
+        for _ in range(n):
+            all_matches.append(create_match(model))
 
     env = SB3MultipleInstanceEnv(all_matches,
                                  num_instances=num_instances)
