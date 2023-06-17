@@ -4,7 +4,7 @@ from rlgym.utils.action_parsers import ActionParser
 from rlgym_sim.utils import ObsBuilder
 from rlgym_sim.utils.action_parsers import DiscreteAction
 from rlgym_sim.utils.reward_functions.common_rewards import EventReward, FaceBallReward, LiuDistanceBallToGoalReward, \
-    VelocityBallToGoalReward, TouchBallReward, VelocityPlayerToBallReward
+    VelocityBallToGoalReward, TouchBallReward, VelocityPlayerToBallReward, ConstantReward
 from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, NoTouchTimeoutCondition, \
     GoalScoredCondition, BallTouchedCondition
 
@@ -98,6 +98,11 @@ version_dict = {
         team_size=1,
         dynamic_gm=False,
         spawn_opponents=False
+    ),
+    "debug": Configuration(
+        terminal_conditions=[TimeoutCondition(50)],
+        rewards=[[ConstantReward()],[1]],
+        state_setter=[[dynamic_state_setter], [1]]
     )
 
 }

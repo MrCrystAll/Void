@@ -1,19 +1,23 @@
+import os
 import time
 
 import rlgym_sim
-from rlgym_sim.gym import Gym
+from rlgym.gamelaunch import LaunchPreference
+from rlgym_sim.gym import Gym as SimGym
 from rlgym_sim.utils.reward_functions.common_rewards import ConstantReward
+
+from rlgym.gym import Gym
 
 from MyPPO import MyPPO
 from StateSetters import ProbabilisticStateSetter
 from config import version_dict, Configuration
-from match import DynamicGMMatch
+from match import DynamicGMMatchSim, DynamicGMMatchGym
 
-version = "default"
+version = "recovery"
 
 env_config: Configuration = version_dict[version]
 
-match = DynamicGMMatch(
+match = DynamicGMMatchGym(
     state_setter=ProbabilisticStateSetter(
         states=env_config.state_setter[0],
         probs=env_config.state_setter[1]
@@ -24,10 +28,10 @@ match = DynamicGMMatch(
     spawn_opponents=env_config.spawn_opponents,
     terminal_conditions=env_config.terminal_conditions,
     reward_function=ConstantReward(),
-    gm_weights=[0.1, 0.8, 0.1]
+    gm_weights=[0.33]
 )
 
-env = Gym(match, tick_skip=8, gravity=1, boost_consumption=1, dodge_deadzone=0.8, copy_gamestate_every_step=False)
+env = Gym(match, os.getpid(), launch_preference=LaunchPreference.STEAM)
 
 
 def LoadModel():
@@ -49,7 +53,7 @@ try:
         if terminated:
             # model = LoadModel()
             start_time = time.perf_counter()
-            env.reset()
+            obs = env.reset()
 
         if start_time + model_time < time.perf_counter():
             model = LoadModel()

@@ -11,7 +11,7 @@ from stable_baselines3.ppo import MlpPolicy
 from MyPPO import MyPPO
 from StateSetters import ProbabilisticStateSetter
 
-from match import DynamicGMMatch
+from match import DynamicGMMatchSim
 from sb3_multi_inst_env import SB3MultipleInstanceEnv
 
 frame_skip = 8  # Number of ticks to repeat an action
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
         match_config: Configuration = version_dict[version]
 
-        return DynamicGMMatch(
+        return DynamicGMMatchSim(
             team_size=match_config.team_size,
             reward_function=SB3CombinedLogReward(
                 reward_functions=match_config.rewards[0],
