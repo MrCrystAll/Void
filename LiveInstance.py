@@ -1,25 +1,23 @@
 import os
-import pickle
+import time
 
-import rlgym
-import torch
-from redis.client import Redis
+import rlgym_sim
+from rlgym.gamelaunch import LaunchPreference
+from rlgym_sim.gym import Gym as SimGym
 from rlgym_sim.utils.reward_functions.common_rewards import ConstantReward
 
+from rlgym.gym import Gym
+
+from MyPPO import MyPPO
 from StateSetters import ProbabilisticStateSetter
 from config import version_dict, Configuration
+from match import DynamicGMMatchSim, DynamicGMMatchGym
 
 version = "recovery"
 
 env_config: Configuration = version_dict[version]
 
-r = Redis(host="127.0.0.1", username="test-bot", password=os.environ["REDIS_PASSWORD"], port=6379, db=0)
-
-model = r.get("model-latest")
-model = pickle.loads(model)
-
-env = rlgym.make(
-    game_speed=1,
+match = DynamicGMMatchGym(
     state_setter=ProbabilisticStateSetter(
         states=env_config.state_setter[0],
         probs=env_config.state_setter[1]
@@ -29,27 +27,40 @@ env = rlgym.make(
     team_size=env_config.team_size,
     spawn_opponents=env_config.spawn_opponents,
     terminal_conditions=env_config.terminal_conditions,
-    tick_skip=8,
-    reward_fn=ConstantReward(),
+    reward_function=ConstantReward(),
+    gm_weights=[0.33]
 )
 
+env = Gym(match, os.getpid(), launch_preference=LaunchPreference.STEAM)
+
+
+def LoadModel():
+    return MyPPO.load("models/exit_save.zip", env=env)
+
+
+model_time = 320
 obs = env.reset()
-obs = torch.Tensor(obs)
 
-while True:
-    try:
-        action_space = model.get_action_distribution(obs)
-        action = model.sample_action(action_space, deterministic=True)
-        action = action.numpy()
+try:
+    model = LoadModel()
+    obs = env.reset()
+    start_time = time.perf_counter()
 
-        obs, _, terminal, _ = env.step(action)
-        obs = torch.Tensor(obs)
+    while True:
+        action, _states = model.predict(obs, deterministic=True)
+        obs, _, terminated, info = env.step(action)
 
-        if terminal:
+        if terminated:
+            # model = LoadModel()
+            start_time = time.perf_counter()
             obs = env.reset()
-            obs = torch.Tensor(obs)
 
-    except KeyboardInterrupt:
-        break
+        if start_time + model_time < time.perf_counter():
+            model = LoadModel()
+            obs = env.reset()
+            start_time = time.perf_counter()
+
+except KeyboardInterrupt:
+    print("Exiting")
 
 

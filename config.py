@@ -4,18 +4,24 @@ from rlgym.utils.action_parsers import ActionParser
 from rlgym_sim.utils import ObsBuilder
 from rlgym_sim.utils.action_parsers import DiscreteAction
 from rlgym_sim.utils.reward_functions.common_rewards import EventReward, FaceBallReward, LiuDistanceBallToGoalReward, \
-    VelocityBallToGoalReward, TouchBallReward, VelocityPlayerToBallReward
+    VelocityBallToGoalReward, TouchBallReward, VelocityPlayerToBallReward, ConstantReward
 from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, NoTouchTimeoutCondition, \
     GoalScoredCondition, BallTouchedCondition
 
-from AstraObs import ExpandAdvancedObs
+from AstraObs import ExpandAdvancedObs, AstraObs
 from Rewards import KickOffReward, EpisodeLengthReward, DistancePlayerToBall
 from StateSetters import AerialBallState, SaveState, ShotState, DefaultState, CustomStateSetter, StandingBallState, \
-    AirDribble2Touch, HalfFlip, Curvedash, RandomEvenRecovery, Chaindash, Walldash, Wavedash, RecoverySetter
+    AirDribble2Touch, HalfFlip, Curvedash, RandomEvenRecovery, Chaindash, Walldash, Wavedash, RecoverySetter, \
+    DynamicScoredReplaySetter
 from TerminalConditions import BallGroundCondition, BallTouchedAfterSteps
 
 fps = 120 // 8
 
+dynamic_state_setter = DynamicScoredReplaySetter(
+        "replays/states_scores_duels.npz",
+        "replays/states_scores_doubles.npz",
+        "replays/states_scores_standard.npz"
+    )
 
 class Configuration:
     def __init__(self,
@@ -23,7 +29,7 @@ class Configuration:
                  terminal_conditions,
                  rewards,
                  action_parser: ActionParser = DiscreteAction(),
-                 obs_builder: ObsBuilder = ExpandAdvancedObs(),
+                 obs_builder: ObsBuilder = AstraObs(),
                  team_size: int = 3,
                  spawn_opponents: bool = True,
                  dynamic_gm: bool = True,
@@ -57,8 +63,8 @@ class Configuration:
 
 version_dict = {
     "default": Configuration(
-        state_setter=[[CustomStateSetter(), DefaultState(), ShotState(), SaveState(), AerialBallState()],
-                      [1, 1, 49, 49, 20]],
+        state_setter=[[CustomStateSetter(), DefaultState(), ShotState(), SaveState(), AerialBallState(), dynamic_state_setter],
+                      [1, 1, 49, 49, 20, 100]],
         terminal_conditions=[TimeoutCondition(fps * 300), NoTouchTimeoutCondition(fps * 45), GoalScoredCondition()],
         rewards=[[EventReward(goal=100, concede=-100, touch=10, save=50, shot=50), FaceBallReward(),
                   LiuDistanceBallToGoalReward(), VelocityBallToGoalReward()], [1.0, 0.7, 1.4, 1]]
@@ -90,7 +96,13 @@ version_dict = {
         rewards=[[TouchBallReward(), VelocityPlayerToBallReward(), VelocityBallToGoalReward(), EpisodeLengthReward(),
                   DistancePlayerToBall()], [10, 3, .2, .03, .1]],
         team_size=1,
-        dynamic_gm=False
+        dynamic_gm=False,
+        spawn_opponents=False
+    ),
+    "debug": Configuration(
+        terminal_conditions=[TimeoutCondition(50)],
+        rewards=[[ConstantReward()],[1]],
+        state_setter=[[dynamic_state_setter], [1]]
     )
 
 }
