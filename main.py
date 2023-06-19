@@ -1,6 +1,7 @@
 import re
 import warnings
 from collections import Counter
+from multiprocessing import Process
 
 import numpy as np
 from rlgym_tools.sb3_utils.sb3_log_reward import SB3CombinedLogReward, SB3CombinedLogRewardCallback
@@ -13,6 +14,7 @@ from StateSetters import ProbabilisticStateSetter
 
 from match import DynamicGMMatchSim
 from sb3_multi_inst_env import SB3MultipleInstanceEnv
+from ui.index import app, socket
 
 frame_skip = 8  # Number of ticks to repeat an action
 half_life_seconds = 5  # Easier to conceptualize, after this many seconds the reward discount is 0.5
@@ -20,21 +22,27 @@ half_life_seconds = 5  # Easier to conceptualize, after this many seconds the re
 fps = 120 / frame_skip
 gamma = np.exp(np.log(0.5) / (fps * half_life_seconds))  # Quick mafs
 agents_per_match = 6
-target_steps = 10_000
+target_steps = 1_000_000
 
 models = {
-    "default": 1,
-    "aerial": 2
+    "default": 1
 }
 
 num_instances = sum(list(models.values()))
 
 steps = target_steps // (num_instances * agents_per_match)  # making sure the experience counts line up properly
 batch_size = target_steps // 10  # getting the batch size down to something more manageable - 100k in this case
-training_interval = 20_000
+training_interval = 2_000_000
 mmr_save_frequency = 50_000_000
 
 if __name__ == "__main__":
+    Process(target=socket.run, kwargs={
+        "app": app,
+        "port": 5000,
+        "debug": True
+    }).start()
+
+    print("Started ui process")
 
     from config import version_dict, Configuration
 
@@ -121,6 +129,7 @@ if __name__ == "__main__":
         # Divide by num_envs (number of agents) because callback only increments every time all agents have taken a step
         # This saves to specified folder with a specified name
 
+    socket.emit("model_loaded", model=model)
 
     def rewards_to_text(rewards):
         return list([re.sub(r"(\w)([A-Z])", r"\1 \2", reward.__class__.__name__) for reward in rewards])
@@ -155,5 +164,5 @@ if __name__ == "__main__":
         print("Exiting training")
 
     print("Saving model")
-    exit_save(model)
+    # exit_save(model)
     print("Save complete")

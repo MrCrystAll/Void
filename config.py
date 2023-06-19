@@ -17,11 +17,11 @@ from TerminalConditions import BallGroundCondition, BallTouchedAfterSteps
 
 fps = 120 // 8
 
-dynamic_state_setter = DynamicScoredReplaySetter(
-        "replays/states_scores_duels.npz",
-        "replays/states_scores_doubles.npz",
-        "replays/states_scores_standard.npz"
-    )
+# dynamic_state_setter = DynamicScoredReplaySetter(
+#         "replays/states_scores_duels.npz",
+#         "replays/states_scores_doubles.npz",
+#         "replays/states_scores_standard.npz"
+#     )
 
 class Configuration:
     def __init__(self,
@@ -63,8 +63,8 @@ class Configuration:
 
 version_dict = {
     "default": Configuration(
-        state_setter=[[CustomStateSetter(), DefaultState(), ShotState(), SaveState(), AerialBallState(), dynamic_state_setter],
-                      [1, 1, 49, 49, 20, 100]],
+        state_setter=[[CustomStateSetter(), DefaultState(), ShotState(), SaveState(), AerialBallState()],
+                      [1, 1, 49, 49, 20]],
         terminal_conditions=[TimeoutCondition(fps * 300), NoTouchTimeoutCondition(fps * 45), GoalScoredCondition()],
         rewards=[[EventReward(goal=100, concede=-100, touch=10, save=50, shot=50), FaceBallReward(),
                   LiuDistanceBallToGoalReward(), VelocityBallToGoalReward()], [1.0, 0.7, 1.4, 1]]
@@ -98,11 +98,6 @@ version_dict = {
         team_size=1,
         dynamic_gm=False,
         spawn_opponents=False
-    ),
-    "debug": Configuration(
-        terminal_conditions=[TimeoutCondition(50)],
-        rewards=[[ConstantReward()],[1]],
-        state_setter=[[dynamic_state_setter], [1]]
     )
 
 }
