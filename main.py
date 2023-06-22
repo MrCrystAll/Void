@@ -1,9 +1,15 @@
 import re
+import re
+import time
 import warnings
 from collections import Counter
 from multiprocessing import Process
+from multiprocessing.connection import Pipe
+from threading import Thread
 
 import numpy as np
+from flask import render_template, Flask
+from flask_socketio import emit, SocketIO
 from rlgym_tools.sb3_utils.sb3_log_reward import SB3CombinedLogReward, SB3CombinedLogRewardCallback
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import VecMonitor, VecNormalize, VecCheckNan
@@ -11,10 +17,11 @@ from stable_baselines3.ppo import MlpPolicy
 
 from MyPPO import MyPPO
 from StateSetters import ProbabilisticStateSetter
-
 from match import DynamicGMMatchSim
 from sb3_multi_inst_env import SB3MultipleInstanceEnv
-from ui.index import app, socket
+
+app = Flask(__name__)
+socket = SocketIO(app, logger=True)
 
 frame_skip = 8  # Number of ticks to repeat an action
 half_life_seconds = 5  # Easier to conceptualize, after this many seconds the reward discount is 0.5
@@ -35,19 +42,15 @@ batch_size = target_steps // 10  # getting the batch size down to something more
 training_interval = 2_000_000
 mmr_save_frequency = 50_000_000
 
-if __name__ == "__main__":
-    Process(target=socket.run, kwargs={
-        "app": app,
-        "port": 5000,
-        "debug": True
-    }).start()
+all_matches = []
+model = None
 
-    print("Started ui process")
 
+def target(ui_pipe, bot_pipe):
+    global model
     from config import version_dict, Configuration
 
     all_configs = list(models.keys())
-
 
     def create_match(version):
         if version not in version_dict:
@@ -75,7 +78,6 @@ if __name__ == "__main__":
             gm_weights=[0.1, 0.8, 0.1]
         )
 
-    all_matches = []
     for model, n in zip(models.keys(), models.values()):
         for _ in range(n):
             all_matches.append(create_match(model))
@@ -85,7 +87,6 @@ if __name__ == "__main__":
     env = VecCheckNan(env)  # Optional
     env = VecMonitor(env)  # Recommended, logs mean reward and ep_len to Tensorboard
     env = VecNormalize(env, norm_obs=False, gamma=gamma)  # Highly recommended, normalizes rewards
-
 
     def exit_save(model):
         model.save(f"models/exit_save")
@@ -129,11 +130,14 @@ if __name__ == "__main__":
         # Divide by num_envs (number of agents) because callback only increments every time all agents have taken a step
         # This saves to specified folder with a specified name
 
-    socket.emit("model_loaded", model=model)
+    socket.emit("send_model", {"steps": model.num_timesteps})
+    ui_pipe.send({
+        "type": "Model",
+        "num_timesteps": model.num_timesteps
+    })
 
     def rewards_to_text(rewards):
         return list([re.sub(r"(\w)([A-Z])", r"\1 \2", reward.__class__.__name__) for reward in rewards])
-
 
     all_rewards = []
     for c in all_configs:
@@ -166,3 +170,49 @@ if __name__ == "__main__":
     print("Saving model")
     # exit_save(model)
     print("Save complete")
+
+
+@socket.on("get_model")
+def get_model():
+    global model
+    if model:
+        emit("send_model", {"model": model.num_timesteps})
+        return
+    else:
+        print("No model yet, sending None")
+        emit("send_model", {"model": None})
+
+    while not model:
+        time.sleep(.5)
+
+    print("Model found, sending model")
+    emit("send_model", {"model": model.num_timesteps})
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+def app_listening(bot_pipe):
+    print("Starting app listening")
+    while True:
+        time.sleep(.1)
+
+        if not bot_pipe.poll():
+            continue
+
+        data = bot_pipe.recv()
+        if "type" not in data:
+            print(f"Invalid data received : {data}")
+
+        if data["type"] == "Model":
+            socket.emit("send_model", data)
+            print(data)
+
+
+if __name__ == "__main__":
+    ui_pipe, bot_pipe = Pipe()
+    Process(target=target, args=(ui_pipe, bot_pipe)).start()
+    Process(target=app_listening, args=(bot_pipe, )).start()
+    socket.run(app, debug=True)
