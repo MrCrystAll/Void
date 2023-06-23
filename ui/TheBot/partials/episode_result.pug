@@ -1,0 +1,18 @@
+div(class="w-50")
+
+    div(class="d-flex align-items-baseline")
+        p Episode #{episode}
+        button(class="btn btn-outline-dark rounded mx-4 btn-sm" type="button" data-bs-toggle="collapse" data-bs-target=`#table${episode}` aria-expanded="false" aria-controls=`table${episode}`) Hide/Show
+
+    div(class="collapse" id=`table${episode}`)
+        table(class="table table-striped table-dark table-bordered")
+
+            thead
+                tr
+                    th Reward name
+                    th Value
+            tbody(class="table-group-divider")
+                each v, k in reward
+                    tr
+                        td= k.substring(0,k.length - 6).replace(/([A-Z])/g, ' $1').trim()
+                        td= v.toFixed(2)

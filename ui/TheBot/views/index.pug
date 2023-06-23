@@ -1,0 +1,10 @@
+extends layout
+
+block content
+    h1= title
+    p Welcome to #{title}
+    div(class="d-flex flex-column")
+        each reward, episode in rewards
+            include ../partials/episode_result
+
+
