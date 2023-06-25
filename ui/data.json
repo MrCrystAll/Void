@@ -1,0 +1,1 @@
+{"state_name": "ShotState","rewards": {"EventReward": {"value": 0.0, "percentage": 0.0}, "FaceBallReward": {"value": 0.8358328893890192, "percentage": 0.0013646973371157635}, "LiuDistanceBallToGoalReward": {"value": 610.8553841746628, "percentage": 0.9973676876431143}, "VelocityBallToGoalReward": {"value": 0.7763731164350445, "percentage": 0.0012676150197698732}}}

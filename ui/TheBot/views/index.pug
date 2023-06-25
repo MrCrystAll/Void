@@ -1,10 +1,36 @@
 extends layout
 
 block content
-    h1= title
-    p Welcome to #{title}
-    div(class="d-flex flex-column")
-        each reward, episode in rewards
-            include ../partials/episode_result
+    div
+        button(class="btn btn-outline-dark rounded mx-4 btn-md float-end" type="button") Clear
+        button(class="btn btn-outline-dark rounded mx-4 btn-md mb-2" type="button") Show episodes
+        if data.length !== 0
+            div( id="episodes_card")
+                div(class="d-flex flex-row flex-wrap card p-2 justify-content-center" )
+                    each d, episode in data
+                        include ../partials/episode_result
+
+            div.mt-2
+                h3 Averages
+                table(class="table table-striped table-bordered w-50")
+                    thead
+                        tr
+                            th Reward
+                            th Average value
+                            th Average percentage
+                    tbody(class="table-group-divider")
+                        each rew in Object.keys(data[0].rewards)
+                            tr
+                                td= rew.substring(0, rew.length - 6).replace(/([A-Z])/g, ' $1').trim()
+                                td= (data.reduce((r, a) => r + a.rewards[rew.toString()].value, 0) / data.length).toFixed(2)
+                                td= `${((data.reduce((r, a) => r + a.rewards[rew.toString()].percentage, 0) / data.length) * 100).toFixed(2)}%`
+        else
+            div.card
+                p.text-center.align-middle No episodes
+
+
+
+
+
 
 

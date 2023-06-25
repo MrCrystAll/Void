@@ -1741,7 +1741,7 @@ class ProbabilisticStateSetter(StateSetter):
         self.training = training
         self.states, self.probs = states, probs
 
-    def reset(self, state_wrapper: StateWrapper):
+    def reset(self, state_wrapper: StateWrapper, return_name: bool = False):
         if self.verbose >= 1:
             if self.old_state:
                 print(f"State {self.old_state.__class__.__name__} finished, choosing a new state...")
@@ -1760,3 +1760,6 @@ class ProbabilisticStateSetter(StateSetter):
 
         # while not _check_positions(state_wrapper):
         selected_state.reset(state_wrapper)
+
+        if return_name:
+            return selected_state.__class__.__name__

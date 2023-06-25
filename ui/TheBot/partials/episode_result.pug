@@ -1,18 +1,20 @@
 div(class="w-50")
 
-    div(class="d-flex align-items-baseline")
-        p Episode #{episode}
-        button(class="btn btn-outline-dark rounded mx-4 btn-sm" type="button" data-bs-toggle="collapse" data-bs-target=`#table${episode}` aria-expanded="false" aria-controls=`table${episode}`) Hide/Show
+    div(class="d-flex align-items-baseline ")
+        p.w-50 Episode #{episode} : #{d.state_name}
+        p.w-25 Reward sum : #{Math.round(Object.values(d.rewards).reduce((r, a) => r + a.value, 0))}
+        button(class="btn btn-outline-dark rounded mx-4 btn-sm" type="button" data-bs-toggle="collapse" data-bs-target=`#table${episode}` aria-expanded="false" aria-controls=`table${episode}`) Details
 
     div(class="collapse" id=`table${episode}`)
-        table(class="table table-striped table-dark table-bordered")
-
+        table(class="table table-striped table-bordered w-75")
             thead
                 tr
                     th Reward name
                     th Value
+                    th Percentage
             tbody(class="table-group-divider")
-                each v, k in reward
+                each v, k in d.rewards
                     tr
-                        td= k.substring(0,k.length - 6).replace(/([A-Z])/g, ' $1').trim()
-                        td= v.toFixed(2)
+                        td= k.replace("Reward","").replace(/([A-Z])/g, ' $1').trim()
+                        td= v.value.toFixed(2)
+                        td= `${(v.percentage * 100).toFixed(2)}%`

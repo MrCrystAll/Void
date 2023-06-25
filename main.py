@@ -1,26 +1,18 @@
 import re
-import re
-import time
 import warnings
 from collections import Counter
-from multiprocessing import Process
-from multiprocessing.connection import Pipe
-from threading import Thread
-from Rewards import ObservableSB3CombinedLogReward
 
 import numpy as np
-from flask import render_template, Flask
-from flask_socketio import emit, SocketIO
-from rlgym_tools.sb3_utils.sb3_log_reward import SB3CombinedLogReward, SB3CombinedLogRewardCallback
+from rlgym_tools.sb3_utils.sb3_log_reward import SB3CombinedLogRewardCallback
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import VecMonitor, VecNormalize, VecCheckNan
 from stable_baselines3.ppo import MlpPolicy
 
 from MyPPO import MyPPO
+from Rewards import ObservableSB3CombinedLogReward
 from StateSetters import ProbabilisticStateSetter
-from match import DynamicGMMatchSim
+from match import ObservableDynamicGMMatchSim
 from sb3_multi_inst_env import SB3MultipleInstanceEnv
-
 
 frame_skip = 8  # Number of ticks to repeat an action
 half_life_seconds = 5  # Easier to conceptualize, after this many seconds the reward discount is 0.5
@@ -28,7 +20,7 @@ half_life_seconds = 5  # Easier to conceptualize, after this many seconds the re
 fps = 120 / frame_skip
 gamma = np.exp(np.log(0.5) / (fps * half_life_seconds))  # Quick mafs
 agents_per_match = 6
-target_steps = 1_000_000
+target_steps = 10_000
 
 models = {
     "default": 1
@@ -38,7 +30,7 @@ num_instances = sum(list(models.values()))
 
 steps = target_steps // (num_instances * agents_per_match)  # making sure the experience counts line up properly
 batch_size = target_steps // 10  # getting the batch size down to something more manageable - 100k in this case
-training_interval = 2_000_000
+training_interval = 20_000
 mmr_save_frequency = 50_000_000
 
 all_matches = []
@@ -60,7 +52,7 @@ if __name__ == "__main__":
 
         match_config: Configuration = version_dict[version]
 
-        return DynamicGMMatchSim(
+        return ObservableDynamicGMMatchSim(
             team_size=match_config.team_size,
             reward_function=ObservableSB3CombinedLogReward(
                 reward_functions=match_config.rewards[0],
@@ -126,7 +118,7 @@ if __name__ == "__main__":
             batch_size=batch_size,  # Batch size as high as possible within reason
             n_steps=steps,  # Number of steps to perform before optimizing network
             tensorboard_log="logs",  # `tensorboard --logdir out/logs` in terminal to see graphs
-            device="cuda"  # Uses GPU if available
+            device="cuda",  # Uses GPU if available
         )
 
         # Save model every so often

@@ -97,25 +97,23 @@ class ObservableSB3CombinedLogReward(CombinedReward):
         except FileNotFoundError:
             print('No lock to release! ')
 
-    def reset(self, initial_state: GameState):
-
+    def calculate_rew_for_players(self):
         if self.all_ep_rewards != {}:
             rewards_dict = {}
             rewards_list = []
             final_rewards = {}
 
-            with open("ui/rewards.json", "w") as f:
-                for key in self.all_ep_rewards.keys():
-                    rewards_dict.setdefault(key, np.sum(self.all_ep_rewards[key], axis=0).tolist())
-                    rewards_list.append(rewards_dict[key])
+            for key in self.all_ep_rewards.keys():
+                rewards_dict.setdefault(key, np.sum(self.all_ep_rewards[key], axis=0).tolist())
+                rewards_list.append(rewards_dict[key])
 
-                rewards_list = np.mean(rewards_list, axis=0).tolist()
+            rewards_list = np.mean(rewards_list, axis=0).tolist()
+            for index, reward in enumerate(self.reward_functions):
+                final_rewards.setdefault(reward.__class__.__name__, rewards_list[index])
 
-                for index, reward in enumerate(self.reward_functions):
-                    final_rewards.setdefault(reward.__class__.__name__, rewards_list[index])
+            return final_rewards
 
-                f.write(JSONEncoder().encode(final_rewards))
-
+    def reset(self, initial_state: GameState):
         self.returns = np.zeros(len(self.reward_functions))
         self.all_ep_rewards.clear()
         super().reset(initial_state)

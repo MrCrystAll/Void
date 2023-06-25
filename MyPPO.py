@@ -136,6 +136,7 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
             callback: BaseCallback,
             rollout_buffer: RolloutBuffer,
             n_rollout_steps: int,
+            monitored: bool = False
     ) -> bool:
         """
         Collect experiences using the current policy and fill a ``RolloutBuffer``.
@@ -154,6 +155,8 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
         # Switch to eval mode (this affects batch norm / dropout)
         self.policy.set_training_mode(False)
 
+
+
         n_steps = 0
         rollout_buffer.reset()
         # Sample new weights for the state dependent exploration
@@ -167,12 +170,30 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                 # Sample a new noise matrix
                 self.policy.reset_noise(env.num_envs)
 
+
             with th.no_grad():
                 # Convert to pytorch tensor or to TensorDict
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 actions, values, log_probs = self.policy(obs_tensor)
+
+            match = self.env.get_attr("_match")
+            all_matches = []
+            nb_agents = match[0].agents
+            i = match[0].team_size * 2 if match[0].spawn_opponents else match[0].team_size
+
             actions = actions.cpu().numpy()
-            actions = np.concatenate((actions, np.zeros(shape=(self.env.num_envs - actions.shape[0], 8))))
+
+            if i == len(match) and nb_agents != actions.shape[0]:
+                actions[nb_agents:] = np.zeros(shape=(actions.shape[0] - nb_agents, 8))
+
+            while i < len(match):
+                actions[nb_agents:i] = np.zeros(shape=(i - nb_agents, 8))
+                nb_agents = i + match[i].agents
+                i += match[i].team_size * 2 if match[i].spawn_opponents else match[i].team_size
+
+                if i == len(match) and nb_agents != actions.shape[0]:
+                    actions[nb_agents:] = np.zeros(shape=(actions.shape[0] - nb_agents, 8))
+
             self._last_obs = np.concatenate((self._last_obs, np.zeros(
                 shape=(self.env.num_envs - self._last_obs.shape[0], self.env.observation_space.shape[0]))))
 
