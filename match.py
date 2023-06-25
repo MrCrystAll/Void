@@ -50,7 +50,7 @@ class ObservableDynamicGMMatchSim(DynamicGMMatchSim):
 
     def get_reset_state(self) -> list:
 
-        if self.ui_data.state_name and self.ui_data.rewards and self.monitored:
+        if self.ui_data.state_name and self.ui_data.rewards:
             with open("ui/data.json", "w") as f:
                 f.write(self.ui_data.jsonify())
             self.ui_data = UIData()
@@ -59,15 +59,13 @@ class ObservableDynamicGMMatchSim(DynamicGMMatchSim):
         self.agents = team_size * 2 if self.spawn_opponents else team_size
         new_state = self._state_setter.build_wrapper(team_size, self.spawn_opponents)
         name = self._state_setter.reset(new_state, True)
-        if self.monitored:
-            self.ui_data.state_name = name
-
+        self.ui_data.state_name = name
         print(f"Resetting with {self.agents}")
 
         return new_state.format_state()
 
     def get_rewards(self, state, done) -> Union[float, List]:
-        if done and self.monitored:
+        if done:
             self.ui_data.rewards = self._reward_fn.calculate_rew_for_players()
 
         return super().get_rewards(state, done)

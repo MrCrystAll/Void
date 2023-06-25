@@ -119,6 +119,7 @@ if __name__ == "__main__":
             n_steps=steps,  # Number of steps to perform before optimizing network
             tensorboard_log="logs",  # `tensorboard --logdir out/logs` in terminal to see graphs
             device="cuda",  # Uses GPU if available
+            monitored_prob=1
         )
 
         # Save model every so often
