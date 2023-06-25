@@ -1,3 +1,4 @@
+import random
 import sys
 import time
 import warnings
@@ -18,7 +19,7 @@ from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedul
 from stable_baselines3.common.utils import obs_as_tensor, safe_mean, get_schedule_fn, explained_variance
 from stable_baselines3.common.vec_env import VecEnv
 
-SelfOnPolicyAlgorithm = TypeVar("SelfOnPolicyAlgorithm", bound="OnPolicyAlgorithm")
+SelfOnPolicyAlgorithm = TypeVar("SelfOnPolicyAlgorithm", bound="DynamicOnPolicyAlgorithm")
 
 
 class DynamicOnPolicyAlgorithm(BaseAlgorithm):
@@ -78,6 +79,7 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
             device: Union[th.device, str] = "auto",
             _init_setup_model: bool = True,
             supported_action_spaces: Optional[Tuple[spaces.Space, ...]] = None,
+            monitored_prob: float = .01
     ):
         super().__init__(
             policy=policy,
@@ -102,6 +104,7 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
         self.rollout_buffer = None
+        self.monitored_prob = monitored_prob
 
         if _init_setup_model:
             self._setup_model()
@@ -148,14 +151,13 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
             (and at the beginning and end of the rollout)
         :param rollout_buffer: Buffer to fill with rollouts
         :param n_rollout_steps: Number of experiences to collect per environment
+        :param monitored: Sending data to server if True
         :return: True if function returned with at least `n_rollout_steps`
             collected, False if callback terminated rollout prematurely.
         """
         assert self._last_obs is not None, "No previous observation was provided"
         # Switch to eval mode (this affects batch norm / dropout)
         self.policy.set_training_mode(False)
-
-
 
         n_steps = 0
         rollout_buffer.reset()
@@ -176,12 +178,12 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 actions, values, log_probs = self.policy(obs_tensor)
 
+            actions = actions.cpu().numpy()
+
             match = self.env.get_attr("_match")
             all_matches = []
             nb_agents = match[0].agents
             i = match[0].team_size * 2 if match[0].spawn_opponents else match[0].team_size
-
-            actions = actions.cpu().numpy()
 
             if i == len(match) and nb_agents != actions.shape[0]:
                 actions[nb_agents:] = np.zeros(shape=(actions.shape[0] - nb_agents, 8))
@@ -272,7 +274,7 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
             total_timesteps: int,
             callback: MaybeCallback = None,
             log_interval: int = 1,
-            tb_log_name: str = "OnPolicyAlgorithm",
+            tb_log_name: str = "DynamicOnPolicyAlgorithm",
             reset_num_timesteps: bool = True,
             progress_bar: bool = False,
     ) -> SelfOnPolicyAlgorithm:
@@ -289,8 +291,11 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
         callback.on_training_start(locals(), globals())
 
         while self.num_timesteps < total_timesteps:
+            rng_number = random.Random().random()
+
             continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer,
-                                                      n_rollout_steps=self.n_steps)
+                                                      n_rollout_steps=self.n_steps,
+                                                      monitored=rng_number < self.monitored_prob)
 
             if continue_training is False:
                 break
@@ -414,6 +419,7 @@ class MyPPO(DynamicOnPolicyAlgorithm):
             seed: Optional[int] = None,
             device: Union[th.device, str] = "auto",
             _init_setup_model: bool = True,
+            monitored_prob: float = .01
     ):
         super().__init__(
             policy,
@@ -440,6 +446,7 @@ class MyPPO(DynamicOnPolicyAlgorithm):
                 spaces.MultiDiscrete,
                 spaces.MultiBinary,
             ),
+            monitored_prob=monitored_prob
         )
 
         # Sanity check, otherwise it will lead to noisy gradient and NaN
