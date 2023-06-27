@@ -162,6 +162,10 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
 
         callback.on_rollout_start()
 
+        agents_numbers = self.env.get_attr(("_match", "agents"))
+        team_sizes = self.env.get_attr(("_match", "team_size"))
+        sp_opp = self.env.get_attr(("_match", "spawn_opponents"))
+
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
                 # Sample a new noise matrix
@@ -172,10 +176,6 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 actions, values, log_probs = self.policy(obs_tensor)
             actions = actions.cpu().numpy()
-
-            agents_numbers = self.env.get_attr(("_match", "agents"))
-            team_sizes = self.env.get_attr(("_match", "team_size"))
-            sp_opp = self.env.get_attr(("_match", "spawn_opponents"))
 
             i = 0
 
@@ -197,6 +197,12 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                 clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
+            if any(dones):
+                agents_numbers = self.env.get_attr(("_match", "agents"))
+                team_sizes = self.env.get_attr(("_match", "team_size"))
+                sp_opp = self.env.get_attr(("_match", "spawn_opponents"))
+
+
             rewards = np.concatenate((rewards, np.zeros(shape=(self.env.num_envs - rewards.shape[0]))))
             values = np.concatenate((values.cpu().numpy(), np.zeros(shape=(self.env.num_envs - values.shape[0], 1))))
             values = torch.Tensor(values).to(self.device)
