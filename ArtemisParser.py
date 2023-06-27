@@ -1,6 +1,6 @@
 from typing import Any
 
-import gym.spaces
+import gym
 import numpy as np
 from rlgym.utils.action_parsers import ActionParser
 from rlgym.utils.gamestates import GameState

@@ -4,11 +4,11 @@ from rlgym.utils.action_parsers import ActionParser
 from rlgym_sim.utils import ObsBuilder
 from rlgym_sim.utils.action_parsers import DiscreteAction
 from rlgym_sim.utils.reward_functions.common_rewards import EventReward, FaceBallReward, LiuDistanceBallToGoalReward, \
-    VelocityBallToGoalReward, TouchBallReward, VelocityPlayerToBallReward, ConstantReward
+    VelocityBallToGoalReward, TouchBallReward, VelocityPlayerToBallReward
 from rlgym_sim.utils.terminal_conditions.common_conditions import TimeoutCondition, NoTouchTimeoutCondition, \
     GoalScoredCondition, BallTouchedCondition
 
-from AstraObs import ExpandAdvancedObs, AstraObs
+from AstraObs import AstraObs
 from Rewards import KickOffReward, EpisodeLengthReward, DistancePlayerToBall
 from StateSetters import AerialBallState, SaveState, ShotState, DefaultState, CustomStateSetter, StandingBallState, \
     AirDribble2Touch, HalfFlip, Curvedash, RandomEvenRecovery, Chaindash, Walldash, Wavedash, RecoverySetter, \
@@ -18,10 +18,10 @@ from TerminalConditions import BallGroundCondition, BallTouchedAfterSteps
 fps = 120 // 8
 
 dynamic_state_setter = DynamicScoredReplaySetter(
-        "replays/states_scores_duels.npz",
-        "replays/states_scores_doubles.npz",
-        "replays/states_scores_standard.npz"
-    )
+    "replays/states_scores_duels.npz",
+    "replays/states_scores_doubles.npz",
+    "replays/states_scores_standard.npz"
+)
 
 class Configuration:
     def __init__(self,
@@ -98,11 +98,6 @@ version_dict = {
         team_size=1,
         dynamic_gm=False,
         spawn_opponents=False
-    ),
-    "debug": Configuration(
-        terminal_conditions=[TimeoutCondition(50)],
-        rewards=[[ConstantReward()],[1]],
-        state_setter=[[dynamic_state_setter], [1]]
     )
 
 }
