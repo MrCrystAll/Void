@@ -27,6 +27,57 @@ app.use(function(req, res, next) {
   next(createError(404));
 });
 
+const tedious = require("tedious")
+const Connection = tedious.Connection
+const Request = tedious.Request
+
+// config for your database
+const config = {
+  server: 'localhost',
+  authentication: {
+    type: "default",
+    trustServerCertificate: true,
+    options: {
+      userName: 'bot_app',
+      password: ''
+    }
+  }
+};
+
+const connection = new Connection(config)
+
+function executeStatement () {
+  let request = new Request("select 123, 'hello world'", (err, rowCount) => {
+    if (err) {
+      console.log(err)
+    } else {
+      console.log(`${rowCount} rows`)
+    }
+    connection.close()
+  })
+
+  request.on('row', (columns) => {
+    columns.forEach((column) => {
+      if (column.value === null) {
+        console.log('NULL')
+      } else {
+        console.log(column.value)
+      }
+    })
+  })
+
+  connection.execSql(request)
+}
+connection.on('connect', (err) => {
+  if (err) {
+    console.log(err)
+  } else {
+    executeStatement()
+  }
+})
+
+connection.connect()
+
 app.use('/css', express.static(path.join(__dirname, 'node_modules/bootstrap/dist/css')))
 app.use('/js', express.static(path.join(__dirname, 'node_modules/bootstrap/dist/js')))
 app.use('/js', express.static(path.join(__dirname, 'node_modules/jquery/dist')))
