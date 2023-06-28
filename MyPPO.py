@@ -185,7 +185,7 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
 
-            states = [[info["state"], info["team_size"], info["spawn_opponents"]] for info in infos]
+            states = [[info["prev_state"], info["team_size"], info["spawn_opponents"]] for info in infos]
             temp = []
 
             i = 0
@@ -194,17 +194,15 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                     states.pop(i)
                 else:
                     temp.append(states[i][0])
-                    i+=1
+                    i += 1
 
             i = 0
-
 
             for state, team_size, so in states:
                 real_player_team = team_size * 2 if so else team_size
                 nb_agents = i + len(state.players)
                 i += real_player_team
                 actions[nb_agents:i] = np.zeros((i - nb_agents, 8))
-
 
             rewards = np.concatenate((rewards, np.zeros(shape=(self.env.num_envs - rewards.shape[0]))))
 

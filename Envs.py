@@ -57,6 +57,7 @@ class ObservableGym(Gym):
         self._prev_state = state
 
         info = {
+            'prev_state': self._prev_state,
             'state': state,
             'result': self._match.get_result(state),
             'team_size': self._match.team_size,
