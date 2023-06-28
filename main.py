@@ -64,7 +64,7 @@ if __name__ == "__main__":
                 probs=match_config.state_setter[1]
             ),
             action_parser=match_config.action_parser,
-            gm_weights=[0.1, 0.8, 0.1]
+            gm_weights=[0.33, 0.33, 0.33]
         )
 
     all_matches = []

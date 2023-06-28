@@ -14,8 +14,11 @@ from stable_baselines3.common.vec_env.base_vec_env import (
 from rlgym_sim.envs import Match
 from rlgym_sim.gym import Gym
 
+from Envs import ObservableGym
+
+
 def _worker(
-    remote: mp.connection.Connection, parent_remote: mp.connection.Connection, env_fn_wrapper: CloudpickleWrapper
+        remote: mp.connection.Connection, parent_remote: mp.connection.Connection, env_fn_wrapper: CloudpickleWrapper
 ) -> None:
     # Import here to avoid a circular import
     from stable_baselines3.common.env_util import is_wrapped
@@ -68,6 +71,7 @@ def _worker(
         except EOFError:
             break
 
+
 class SB3MultipleInstanceEnv(SubprocVecEnv):
     """
     Class for launching several Rocket League instances into a single SubprocVecEnv for use with Stable Baselines.
@@ -91,13 +95,13 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
         return est_proc
 
     def __init__(
-        self,
-        match_func_or_matches: Union[Callable[[], Match], Sequence[Match]],
-        num_instances: Optional[int] = None,
-        wait_time: float = 0,
-        tick_skip: float = 8,
-        dodge_deadzone: float = 0.5,
-        copy_gamestate_every_step: bool = False
+            self,
+            match_func_or_matches: Union[Callable[[], Match], Sequence[Match]],
+            num_instances: Optional[int] = None,
+            wait_time: float = 0,
+            tick_skip: float = 8,
+            dodge_deadzone: float = 0.5,
+            copy_gamestate_every_step: bool = False
     ):
         """
         :param match_func_or_matches: either a function which produces the a Match object, or a list of Match objects.
@@ -127,7 +131,7 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
         def get_process_func(i):
             def spawn_process():
                 match = match_func_or_matches[i]
-                env = Gym(
+                env = ObservableGym(
                     match,
                     copy_gamestate_every_step=copy_gamestate_every_step,
                     dodge_deadzone=dodge_deadzone,
@@ -159,7 +163,7 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
         self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(n_envs)])
         self.processes = []
         for work_remote, remote, env_fn in zip(
-            self.work_remotes, self.remotes, env_fns
+                self.work_remotes, self.remotes, env_fns
         ):
             args = (work_remote, remote, CloudpickleWrapper(env_fn))
             # daemon=True: if the main process crashes, we should not cause things to hang
@@ -201,7 +205,7 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
         i = 0
 
         for remote, n_agents in zip(self.remotes, self.n_agents_per_env):
-            remote.send(("step", actions[i : i + n_agents]))
+            remote.send(("step", actions[i: i + n_agents]))
             i += n_agents
         self.waiting = True
 
@@ -224,10 +228,8 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
             flat_dones += [done] * n_agents
             flat_infos += [info] * n_agents
 
-
             flat_obs += [[0] * self.observation_space.shape[0]] * (n_agents - len(obs))
             flat_rews += [0] * (n_agents - len(rew))
-
 
         self.waiting = False
         return (

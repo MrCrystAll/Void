@@ -2,13 +2,11 @@ import sys
 import time
 import warnings
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
-from torch.nn import functional as F
 
 import numpy as np
 import torch
 import torch as th
 from gym import spaces
-
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.buffers import DictRolloutBuffer, RolloutBuffer
 from stable_baselines3.common.callbacks import BaseCallback
@@ -17,6 +15,7 @@ from stable_baselines3.common.policies import ActorCriticPolicy, BasePolicy, Act
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import obs_as_tensor, safe_mean, get_schedule_fn, explained_variance
 from stable_baselines3.common.vec_env import VecEnv
+from torch.nn import functional as F
 
 SelfOnPolicyAlgorithm = TypeVar("SelfOnPolicyAlgorithm", bound="OnPolicyAlgorithm")
 
@@ -162,10 +161,6 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
 
         callback.on_rollout_start()
 
-        agents_numbers = self.env.get_attr(("_match", "agents"))
-        team_sizes = self.env.get_attr(("_match", "team_size"))
-        sp_opp = self.env.get_attr(("_match", "spawn_opponents"))
-
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
                 # Sample a new noise matrix
@@ -176,14 +171,6 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 actions, values, log_probs = self.policy(obs_tensor)
             actions = actions.cpu().numpy()
-
-            i = 0
-
-            for team_size, agent_numbers, so in zip(team_sizes, agents_numbers, sp_opp):
-                nb_agents = i + agent_numbers
-                i += team_size * 2 if so else team_size
-
-                actions[nb_agents:i] = np.zeros((i - nb_agents, 8))
 
             self._last_obs = np.concatenate((self._last_obs, np.zeros(
                 shape=(self.env.num_envs - self._last_obs.shape[0], self.env.observation_space.shape[0]))))
@@ -197,13 +184,30 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                 clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
-            if any(dones):
-                agents_numbers = self.env.get_attr(("_match", "agents"))
-                team_sizes = self.env.get_attr(("_match", "team_size"))
-                sp_opp = self.env.get_attr(("_match", "spawn_opponents"))
+
+            states = [[info["state"], info["team_size"], info["spawn_opponents"]] for info in infos]
+            temp = []
+
+            i = 0
+            while i != len(states):
+                if states[i][0] in temp:
+                    states.pop(i)
+                else:
+                    temp.append(states[i][0])
+                    i+=1
+
+            i = 0
+
+
+            for state, team_size, so in states:
+                real_player_team = team_size * 2 if so else team_size
+                nb_agents = i + len(state.players)
+                i += real_player_team
+                actions[nb_agents:i] = np.zeros((i - nb_agents, 8))
 
 
             rewards = np.concatenate((rewards, np.zeros(shape=(self.env.num_envs - rewards.shape[0]))))
+
             values = np.concatenate((values.cpu().numpy(), np.zeros(shape=(self.env.num_envs - values.shape[0], 1))))
             values = torch.Tensor(values).to(self.device)
 
