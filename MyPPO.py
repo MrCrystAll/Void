@@ -162,6 +162,10 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
 
         callback.on_rollout_start()
 
+        agents_numbers = self.env.get_attr(("_match", "agents"))
+        team_sizes = self.env.get_attr(("_match", "team_size"))
+        sp_opp = self.env.get_attr(("_match", "spawn_opponents"))
+
         while n_steps < n_rollout_steps:
             if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
                 # Sample a new noise matrix
@@ -173,22 +177,13 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                 actions, values, log_probs = self.policy(obs_tensor)
             actions = actions.cpu().numpy()
 
-            match = self.env.get_attr("_match")
-            all_matches = []
-            nb_agents = match[0].agents
-            i = match[0].team_size * 2 if match[0].spawn_opponents else match[0].team_size
+            i = 0
 
+            for team_size, agent_numbers, so in zip(team_sizes, agents_numbers, sp_opp):
+                nb_agents = i + agent_numbers
+                i += team_size * 2 if so else team_size
 
-            if i == len(match) and nb_agents != actions.shape[0]:
-                actions[nb_agents:] = np.zeros(shape=(actions.shape[0] - nb_agents, 8))
-
-            while i < len(match):
-                actions[nb_agents:i] = np.zeros(shape=(i - nb_agents, 8))
-                nb_agents = i + match[i].agents
-                i += match[i].team_size * 2 if match[i].spawn_opponents else match[i].team_size
-
-                if i == len(match) and nb_agents != actions.shape[0]:
-                    actions[nb_agents:] = np.zeros(shape=(actions.shape[0] - nb_agents, 8))
+                actions[nb_agents:i] = np.zeros((i - nb_agents, 8))
 
             self._last_obs = np.concatenate((self._last_obs, np.zeros(
                 shape=(self.env.num_envs - self._last_obs.shape[0], self.env.observation_space.shape[0]))))
@@ -202,6 +197,12 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                 clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
+            if any(dones):
+                agents_numbers = self.env.get_attr(("_match", "agents"))
+                team_sizes = self.env.get_attr(("_match", "team_size"))
+                sp_opp = self.env.get_attr(("_match", "spawn_opponents"))
+
+
             rewards = np.concatenate((rewards, np.zeros(shape=(self.env.num_envs - rewards.shape[0]))))
             values = np.concatenate((values.cpu().numpy(), np.zeros(shape=(self.env.num_envs - values.shape[0], 1))))
             values = torch.Tensor(values).to(self.device)
