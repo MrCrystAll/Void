@@ -171,6 +171,13 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 actions, values, log_probs = self.policy(obs_tensor)
             actions = actions.cpu().numpy()
+            values = values.cpu().numpy()
+            log_probs = log_probs.cpu().numpy()
+            for i in range(self._last_obs.shape[0]):
+                if np.count_nonzero(self._last_obs[i]) == 0:
+                    actions[i] = np.zeros((1, self.action_space.shape[0]))
+                    values[i] = 0
+                    log_probs[i] = 0
 
             self._last_obs = np.concatenate((self._last_obs, np.zeros(
                 shape=(self.env.num_envs - self._last_obs.shape[0], self.env.observation_space.shape[0]))))
@@ -185,32 +192,8 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
 
-            states = [[info["prev_state"], info["team_size"], info["spawn_opponents"]] for info in infos]
-            temp = []
-
-            i = 0
-            while i != len(states):
-                if states[i][0] in temp:
-                    states.pop(i)
-                else:
-                    temp.append(states[i][0])
-                    i += 1
-
-            i = 0
-
-            for state, team_size, so in states:
-                real_player_team = team_size * 2 if so else team_size
-                nb_agents = i + len(state.players)
-                i += real_player_team
-                actions[nb_agents:i] = np.zeros((i - nb_agents, 8))
-
             rewards = np.concatenate((rewards, np.zeros(shape=(self.env.num_envs - rewards.shape[0]))))
-
-            values = np.concatenate((values.cpu().numpy(), np.zeros(shape=(self.env.num_envs - values.shape[0], 1))))
             values = torch.Tensor(values).to(self.device)
-
-            log_probs = np.concatenate(
-                (log_probs.cpu().numpy(), np.zeros(shape=(self.env.num_envs - log_probs.shape[0]))))
             log_probs = torch.Tensor(log_probs).to(self.device)
 
             old_ep_starts = np.copy(self._last_episode_starts)
