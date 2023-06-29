@@ -1,7 +1,7 @@
 import multiprocessing as mp
 import os
 import time
-from typing import Optional, List, Union, Any, Callable, Sequence
+from typing import Optional, List, Union, Any, Callable, Sequence, Iterable, Tuple
 
 import numpy as np
 from stable_baselines3.common.vec_env import SubprocVecEnv, CloudpickleWrapper, VecEnv
@@ -10,10 +10,63 @@ from stable_baselines3.common.vec_env.base_vec_env import (
     VecEnvStepReturn,
     VecEnvIndices,
 )
-from stable_baselines3.common.vec_env.subproc_vec_env import _worker
 
 from rlgym_sim.envs import Match
 from rlgym_sim.gym import Gym
+
+def _worker(
+    remote: mp.connection.Connection, parent_remote: mp.connection.Connection, env_fn_wrapper: CloudpickleWrapper
+) -> None:
+    # Import here to avoid a circular import
+    from stable_baselines3.common.env_util import is_wrapped
+
+    parent_remote.close()
+    env = env_fn_wrapper.var()
+    while True:
+        try:
+            cmd, data = remote.recv()
+            if cmd == "step":
+                observation, reward, done, info = env.step(data)
+                if done:
+                    # save final observation where user can get it, then reset
+                    info["terminal_observation"] = observation
+                    observation = env.reset()
+                remote.send((observation, reward, done, info))
+            elif cmd == "seed":
+                remote.send(env.seed(data))
+            elif cmd == "reset":
+                observation = env.reset()
+                remote.send(observation)
+            elif cmd == "render":
+                remote.send(env.render(data))
+            elif cmd == "close":
+                env.close()
+                remote.close()
+                break
+            elif cmd == "get_spaces":
+                remote.send((env.observation_space, env.action_space))
+            elif cmd == "env_method":
+                method = getattr(env, data[0])
+                remote.send(method(*data[1], **data[2]))
+            elif cmd == "get_attr":
+                if not isinstance(data, str):
+                    final_obj = None
+                    for arg in data:
+                        if final_obj is None:
+                            final_obj = getattr(env, arg)
+                        else:
+                            final_obj = getattr(final_obj, arg)
+                    remote.send(final_obj)
+                else:
+                    remote.send(getattr(env, data))
+            elif cmd == "set_attr":
+                remote.send(setattr(env, data[0], data[1]))
+            elif cmd == "is_wrapped":
+                remote.send(is_wrapped(env, data))
+            else:
+                raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
+        except EOFError:
+            break
 
 class SB3MultipleInstanceEnv(SubprocVecEnv):
     """
@@ -92,6 +145,7 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
 
         # START - Code from SubprocVecEnv class
         self.waiting = False
+        self.waiting_attr = False
         self.closed = False
         n_envs = len(env_fns)
 
@@ -199,3 +253,22 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
                     remotes.append(remote)
                     break
         return remotes
+
+    def get_attr(self, attr_name: Union[Tuple, List, str], indices: VecEnvIndices = None) -> List[Any]:
+        self.get_attr_async(attr_name)
+        return self.get_attr_wait()
+
+    def get_attr_async(self, attr_name):
+        for remote, n_agents in zip(self.remotes, self.n_agents_per_env):
+            remote.send(("get_attr", attr_name))
+
+        self.waiting_attr = True
+
+    def get_attr_wait(self):
+        data = []
+
+        for remote, n_agents in zip(self.remotes, self.n_agents_per_env):
+            data.append(remote.recv())
+
+        self.waiting_attr = False
+        return data
