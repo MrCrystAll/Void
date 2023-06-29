@@ -173,6 +173,7 @@ class DynamicOnPolicyAlgorithm(BaseAlgorithm):
             actions = actions.cpu().numpy()
             values = values.cpu().numpy()
             log_probs = log_probs.cpu().numpy()
+
             for i in range(self._last_obs.shape[0]):
                 if np.count_nonzero(self._last_obs[i]) == 0:
                     actions[i] = np.zeros((1, self.action_space.shape[0]))
@@ -506,15 +507,29 @@ class MyPPO(DynamicOnPolicyAlgorithm):
                     self.policy.reset_noise(self.batch_size)
 
                 values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
+
+                actions = actions.cpu().numpy()
+                indexes = []
+
+                for i in range(actions.shape[0]):
+                    if np.count_nonzero(actions[i]) != 0:
+                        indexes.append(i)
+
+                entropy = torch.index_select(entropy.cpu(), 0, torch.Tensor(indexes).int()).to(self.device)
+                values = torch.index_select(values.cpu(), 0, torch.Tensor(indexes).int()).to(self.device)
+                log_prob = torch.index_select(log_prob.cpu(), 0, torch.Tensor(indexes).int()).to(self.device)
+
                 values = values.flatten()
+
                 # Normalize advantage
                 advantages = rollout_data.advantages
+                advantages = torch.index_select(advantages.cpu(), 0, torch.Tensor(indexes).int()).to(self.device)
                 # Normalization does not make sense if mini batchsize == 1, see GH issue #325
                 if self.normalize_advantage and len(advantages) > 1:
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
                 # ratio between old and new policy, should be one at the first iteration
-                ratio = th.exp(log_prob - rollout_data.old_log_prob)
+                ratio = th.exp(log_prob - torch.index_select(rollout_data.old_log_prob.cpu(), 0, torch.Tensor(indexes).int()).to(self.device))
 
                 # clipped surrogate loss
                 policy_loss_1 = advantages * ratio
@@ -532,11 +547,11 @@ class MyPPO(DynamicOnPolicyAlgorithm):
                 else:
                     # Clip the difference between old and new value
                     # NOTE: this depends on the reward scaling
-                    values_pred = rollout_data.old_values + th.clamp(
-                        values - rollout_data.old_values, -clip_range_vf, clip_range_vf
+                    values_pred = torch.index_select(rollout_data.old_values.cpu(), 0, torch.Tensor(indexes).int()).to(self.device) + th.clamp(
+                        values - torch.index_select(rollout_data.old_values.cpu(), 0, torch.Tensor(indexes).int()).to(self.device), -clip_range_vf, clip_range_vf
                     )
                 # Value loss using the TD(gae_lambda) target
-                value_loss = F.mse_loss(rollout_data.returns, values_pred)
+                value_loss = F.mse_loss(torch.index_select(rollout_data.returns.cpu(), 0, torch.Tensor(indexes).int()).to(self.device), values_pred)
                 value_losses.append(value_loss.item())
 
                 # Entropy loss favor exploration
@@ -555,7 +570,7 @@ class MyPPO(DynamicOnPolicyAlgorithm):
                 # and discussion in PR #419: https://github.com/DLR-RM/stable-baselines3/pull/419
                 # and Schulman blog: http://joschu.net/blog/kl-approx.html
                 with th.no_grad():
-                    log_ratio = log_prob - rollout_data.old_log_prob
+                    log_ratio = log_prob - torch.index_select(rollout_data.old_log_prob.cpu(), 0, torch.Tensor(indexes).int()).to(self.device)
                     approx_kl_div = th.mean((th.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
                     approx_kl_divs.append(approx_kl_div)
 
