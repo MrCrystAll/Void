@@ -3,12 +3,14 @@ import warnings
 from collections import Counter
 
 import numpy as np
+from rlgym_sim.envs import Match
 from rlgym_tools.sb3_utils.sb3_log_reward import SB3CombinedLogReward, SB3CombinedLogRewardCallback
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import VecMonitor, VecNormalize, VecCheckNan
 from stable_baselines3.ppo import MlpPolicy
 
-from MyPPO import MyPPO
+from MyPPO import MyPPO, LoggerPPO, NewPPO
 from StateSetters import ProbabilisticStateSetter
 
 from match import DynamicGMMatchSim
@@ -23,8 +25,7 @@ agents_per_match = 6
 target_steps = 10_000
 
 models = {
-    "default": 1,
-    "aerial": 2
+    "default": 2
 }
 
 num_instances = sum(list(models.values()))
@@ -59,12 +60,12 @@ if __name__ == "__main__":
             terminal_conditions=match_config.terminal_conditions,
             obs_builder=match_config.obs_builder,
             state_setter=ProbabilisticStateSetter(
-                verbose=1,
+                verbose=0,
                 states=match_config.state_setter[0],
                 probs=match_config.state_setter[1]
             ),
             action_parser=match_config.action_parser,
-            gm_weights=[0.33, 0.33, 0.33]
+            gm_weights=[1, 1, 0]
         )
 
     all_matches = []
@@ -83,7 +84,7 @@ if __name__ == "__main__":
         model.save(f"models/exit_save")
 
     try:
-        model = MyPPO.load(
+        model = PPO.load(
             f"models/exit_save.zip",
             env,
             device="cuda",
@@ -101,7 +102,7 @@ if __name__ == "__main__":
                 vf=[512, 512, 512])],
         )
 
-        model = MyPPO(
+        model = PPO(
             MlpPolicy,
             env,
             n_epochs=10,  # PPO calls for multiple epochs
@@ -148,6 +149,7 @@ if __name__ == "__main__":
                         callback=[callback, SB3CombinedLogRewardCallback(reward_names=reward_legends)],
                         reset_num_timesteps=False)  # can ignore callback if training_interval < callback target
             # model.save(f"models/{Worker.current_model}/exit_save")
+            print("Ended learning")
             if model.num_timesteps >= mmr_model_target_count:
                 model.save(f"mmr_models/{model.num_timesteps}")
                 mmr_model_target_count += mmr_save_frequency

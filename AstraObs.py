@@ -1,31 +1,9 @@
-import random
 from typing import Any
 
 import numpy as np
-import rlgym_sim.utils.common_values as constants
-from RocketSim import Arena, BallState, Vec
+import rlgym.utils.common_values as constants
 from rlgym_sim.utils.gamestates import GameState, PlayerData
 from rlgym_sim.utils.obs_builders import AdvancedObs
-
-
-def _nparray_to_vec(arr):
-    return Vec(arr[0], arr[1], arr[2])
-
-
-def _invert_ball_data(ball):
-    return BallState(
-        pos=Vec(-ball.pos.x, -ball.pos.y, ball.pos.z),
-        vel=Vec(-ball.vel.x, -ball.vel.y, ball.vel.z),
-        ang_vel=ball.ang_vel,
-    )
-
-
-a = Arena()
-
-
-def get_closest_to_ball(players, ball):
-    dists = [np.linalg.norm(p.car_data.position - ball.position) for p in players]
-    return players[dists.index(min(dists))]
 
 
 class AstraObs(AdvancedObs):
@@ -52,31 +30,6 @@ class AstraObs(AdvancedObs):
         self._update_timers(state)
         self.boosts_timers /= self.BOOST_STD
         self.inverted_boosts_timers /= self.BOOST_STD
-
-        # Reset ball position
-        a.ball.set_state(BallState(
-            pos=_nparray_to_vec(state.ball.position),
-            vel=_nparray_to_vec(state.ball.linear_velocity),
-            ang_vel=_nparray_to_vec(state.ball.angular_velocity)
-        ))
-
-        # self.lookahead_steps = random.randint(3, 10)
-
-        # a.step(self.tick_skip * self.lookahead_steps)
-        # self.ball_prediction = a.ball.get_state()
-
-        # print(
-        #     f"From {state.ball.position} to {self.ball_prediction.pos} ({self.lookahead_steps * self.tick_skip} steps)")
-
-    # def _add_player_to_obs(self, obs: List, player: PlayerData, ball: PhysicsObject, inverted: bool):
-    #     player_car = super(AstraObs, self)._add_player_to_obs(obs, player, ball, inverted)
-    #
-    #     if player.car_id in self.last_boost_amount:
-    #         obs.extend([int(abs(self.last_boost_amount[player.car_id] - player.boost_amount) > 0.0001)])
-    #     else:
-    #         obs.extend([int(False)])
-    #
-    #     return player_car
 
     def build_obs(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> Any:
 
@@ -134,17 +87,7 @@ class AstraObs(AdvancedObs):
         else:
             timers = self.boosts_timers
 
-        # base_obs = np.concatenate((base_obs, [
-        #     timers,
-        #     ball_pred.pos,
-        #     ball_pred.vel,
-        #     ball_pred.ang_vel,
-        #     self.lookahead_steps
-        # ]))
-
         base_obs = np.concatenate((base_obs, timers))
-        # print(f" ========= Player team : {player.team_num} | Car id {player.car_id} ========= ")
-        # AstraObs.print_obs(base_obs)
 
         base_obs = np.nan_to_num(base_obs, nan=0)
         self.post_step(state)
@@ -173,10 +116,6 @@ class AstraObs(AdvancedObs):
             AstraObs.print_player_obs(obs[76 + i * 32: (76 + 32) + i * 32])
 
         print(f"Pads timer :                        {obs[237:271]}")
-        print(f"Ball expected position :            {obs[271:274]}")
-        print(f"Ball expected velocity :            {obs[274:277]}")
-        print(f"Ball expected angular velocity :    {obs[277:280]}")
-        print(f"Lookahead steps :                   {obs[280:281]}")
 
     @staticmethod
     def print_player_obs(obs):

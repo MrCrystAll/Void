@@ -1,9 +1,9 @@
 from typing import Any
 
-import gym
+import gymnasium
 import numpy as np
-from rlgym.utils.action_parsers import ActionParser
-from rlgym.utils.gamestates import GameState
+from rlgym.utils.action_parsers.discrete_act import ActionParser
+from rlgym_sim.utils.gamestates import GameState
 
 
 class ArtemisParser(ActionParser):
@@ -38,8 +38,8 @@ class ArtemisParser(ActionParser):
         actions = np.array(actions)
         return actions
 
-    def get_action_space(self) -> gym.spaces.Space:
-        return gym.spaces.Discrete(len(self._lookup_table))
+    def get_action_space(self) -> gymnasium.spaces.Space:
+        return gymnasium.spaces.Discrete(len(self._lookup_table))
 
     def parse_actions(self, actions: Any, state: GameState) -> np.ndarray:
-        return np.asarray(actions)
+        return self._lookup_table[actions]

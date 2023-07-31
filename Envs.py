@@ -1,5 +1,6 @@
 from typing import Dict, List, Tuple, Any, Union
 
+import numpy as np
 from rlgym_sim.gym import Gym
 
 
@@ -11,6 +12,8 @@ class ObservableGym(Gym):
     def __init__(self, match, copy_gamestate_every_step, dodge_deadzone, tick_skip, gravity, boost_consumption):
         super().__init__(match, copy_gamestate_every_step, dodge_deadzone, tick_skip, gravity, boost_consumption)
 
+    def pre_reset(self):
+        self._match.pre_reset()
 
     def reset(self, return_info=False) -> Union[List, Tuple]:
         """
@@ -31,7 +34,7 @@ class ObservableGym(Gym):
                 'state': state,
                 'result': self._match.get_result(state),
                 'team_size': self._match.team_size,
-                'spawn_opponents': self._match.spawn_opponents
+                'so': self._match.spawn_opponents
             }
             return obs, info
         return obs
@@ -61,7 +64,7 @@ class ObservableGym(Gym):
             'state': state,
             'result': self._match.get_result(state),
             'team_size': self._match.team_size,
-            'spawn_opponents': self._match.spawn_opponents
+            'so': self._match.spawn_opponents
         }
 
         return obs, reward, done, info

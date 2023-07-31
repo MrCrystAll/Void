@@ -1,75 +1,22 @@
 import multiprocessing as mp
 import os
 import time
-from typing import Optional, List, Union, Any, Callable, Sequence, Iterable, Tuple
+from typing import Optional, List, Union, Any, Callable, Sequence, Iterable
 
 import numpy as np
+
+from Envs import ObservableGym
+from stable_baselines3.common.buffers import RolloutBuffer
 from stable_baselines3.common.vec_env import SubprocVecEnv, CloudpickleWrapper, VecEnv
 from stable_baselines3.common.vec_env.base_vec_env import (
     VecEnvObs,
     VecEnvStepReturn,
     VecEnvIndices,
 )
+from stable_baselines3.common.vec_env.subproc_vec_env import _worker
 
 from rlgym_sim.envs import Match
 from rlgym_sim.gym import Gym
-
-from Envs import ObservableGym
-
-
-def _worker(
-        remote: mp.connection.Connection, parent_remote: mp.connection.Connection, env_fn_wrapper: CloudpickleWrapper
-) -> None:
-    # Import here to avoid a circular import
-    from stable_baselines3.common.env_util import is_wrapped
-
-    parent_remote.close()
-    env = env_fn_wrapper.var()
-    while True:
-        try:
-            cmd, data = remote.recv()
-            if cmd == "step":
-                observation, reward, done, info = env.step(data)
-                if done:
-                    # save final observation where user can get it, then reset
-                    info["terminal_observation"] = observation
-                    observation = env.reset()
-                remote.send((observation, reward, done, info))
-            elif cmd == "seed":
-                remote.send(env.seed(data))
-            elif cmd == "reset":
-                observation = env.reset()
-                remote.send(observation)
-            elif cmd == "render":
-                remote.send(env.render(data))
-            elif cmd == "close":
-                env.close()
-                remote.close()
-                break
-            elif cmd == "get_spaces":
-                remote.send((env.observation_space, env.action_space))
-            elif cmd == "env_method":
-                method = getattr(env, data[0])
-                remote.send(method(*data[1], **data[2]))
-            elif cmd == "get_attr":
-                if not isinstance(data, str):
-                    final_obj = None
-                    for arg in data:
-                        if final_obj is None:
-                            final_obj = getattr(env, arg)
-                        else:
-                            final_obj = getattr(final_obj, arg)
-                    remote.send(final_obj)
-                else:
-                    remote.send(getattr(env, data))
-            elif cmd == "set_attr":
-                remote.send(setattr(env, data[0], data[1]))
-            elif cmd == "is_wrapped":
-                remote.send(is_wrapped(env, data))
-            else:
-                raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
-        except EOFError:
-            break
 
 
 class SB3MultipleInstanceEnv(SubprocVecEnv):
@@ -128,6 +75,8 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
                 match_func_or_matches() for _ in range(num_instances)
             ]
 
+        self.all_matches = match_func_or_matches
+
         def get_process_func(i):
             def spawn_process():
                 match = match_func_or_matches[i]
@@ -149,9 +98,10 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
 
         # START - Code from SubprocVecEnv class
         self.waiting = False
-        self.waiting_attr = False
         self.closed = False
         n_envs = len(env_fns)
+
+
 
         # Fork is not a thread safe method (see issue #217)
         # but is more user friendly (does not require to wrap the code in
@@ -162,15 +112,17 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
 
         self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(n_envs)])
         self.processes = []
-        for work_remote, remote, env_fn in zip(
+        for index, data in enumerate(zip(
                 self.work_remotes, self.remotes, env_fns
-        ):
+        )):
+            work_remote, remote, env_fn = data
             args = (work_remote, remote, CloudpickleWrapper(env_fn))
             # daemon=True: if the main process crashes, we should not cause things to hang
             process = ctx.Process(
                 target=_worker, args=args, daemon=True
             )  # pytype:disable=attribute-error
             process.start()
+            print(f"Instance {index + 1} started")
             self.processes.append(process)
             work_remote.close()
 
@@ -182,62 +134,77 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
         # END - Code from SubprocVecEnv class
 
         self.n_agents_per_env = [m.agents for m in match_func_or_matches]
+        self.max_agents_per_env = [m.team_size * 2 if m.spawn_opponents else m.team_size for m in match_func_or_matches]
+
         self.num_envs = sum(self.n_agents_per_env)
         VecEnv.__init__(self, self.num_envs, observation_space, action_space)
 
+    def pre_reset(self):
+        for remote in self.remotes:
+            remote.send(("pre_reset", None))
+
     def reset(self) -> VecEnvObs:
+        self.n_agents_per_env = self.get_attr(("_match", "agents"))
         for remote in self.remotes:
             remote.send(("reset", None))
 
-        flat_obs = []
-        for remote, n_agents in zip(self.remotes, self.n_agents_per_env):
+        flat_obs = np.zeros((sum(self.max_agents_per_env), *self.observation_space.shape))
+        current_pos = 0
+        for remote, n_agents, max_agents in zip(self.remotes, self.n_agents_per_env, self.max_agents_per_env):
             obs = remote.recv()
+            padding_amount = max_agents - n_agents
 
-            if len(obs) < 7:
-                flat_obs += obs
-            else:
-                flat_obs.append(obs)
+            flat_obs[current_pos:current_pos + n_agents] = np.asarray(obs)
+            flat_obs[current_pos + n_agents:current_pos + max_agents] = np.zeros(
+                (padding_amount, *self.observation_space.shape))
 
-            flat_obs += [[0] * self.observation_space.shape[0]] * (n_agents - len(obs))
+            current_pos += max_agents
+
         return np.asarray(flat_obs)
 
-    def step_async(self, actions: np.ndarray) -> None:
-        i = 0
+    def get_attr(self, attr_name: Union[str, Iterable[str]], indices: VecEnvIndices = None) -> List[Any]:
+        for remote in self.remotes:
+            remote.send(("get_attr", attr_name))
 
+        attrs = []
+        for remote in self.remotes:
+            attr = remote.recv()
+            attrs.append(attr)
+
+        return attrs
+
+    def step_async(self, actions: np.ndarray) -> None:
+        self.n_agents_per_env = self.get_attr(("_match", "agents"))
+
+        i = 0
         for remote, n_agents in zip(self.remotes, self.n_agents_per_env):
             remote.send(("step", actions[i: i + n_agents]))
             i += n_agents
         self.waiting = True
 
     def step_wait(self) -> VecEnvStepReturn:
-        flat_obs = []
-        flat_rews = []
-        flat_dones = []
-        flat_infos = []
-        for remote, n_agents in zip(self.remotes, self.n_agents_per_env):
+        flat_obs = np.zeros((sum(self.max_agents_per_env), *self.observation_space.shape))
+        flat_rewards = np.zeros((sum(self.max_agents_per_env), ))
+        flat_done = []
+        flat_info = []
+        current_pos = 0
+
+        for remote, n_agents, max_agents in zip(self.remotes, self.n_agents_per_env, self.max_agents_per_env):
             obs, rew, done, info = remote.recv()
+            padding_amount = max_agents - n_agents
 
-            if type(rew) == float:
-                rew = [rew]
+            flat_obs[current_pos:current_pos + n_agents] = np.asarray(obs)
+            flat_rewards[current_pos:current_pos + n_agents] = np.array(rew)
+            flat_done += [done] * max_agents
+            flat_info += [info] * max_agents
 
-            if len(obs) < 7:
-                flat_obs += obs
-            else:
-                flat_obs.append(obs)
-            flat_rews += rew
-            flat_dones += [done] * n_agents
-            flat_infos += [info] * n_agents
+            flat_obs[current_pos + n_agents:current_pos + max_agents] = np.zeros((padding_amount, *self.observation_space.shape))
+            flat_rewards[current_pos + n_agents:current_pos + max_agents] = np.zeros((padding_amount, ))
 
-            flat_obs += [[0] * self.observation_space.shape[0]] * (n_agents - len(obs))
-            flat_rews += [0] * (n_agents - len(rew))
+            current_pos += max_agents
 
-        self.waiting = False
-        return (
-            np.asarray(flat_obs),
-            np.array(flat_rews),
-            np.array(flat_dones),
-            flat_infos,
-        )
+        return flat_obs, flat_rewards, np.array(flat_done), flat_info
+
 
     def seed(self, seed: Optional[int] = None) -> List[Union[None, int]]:
         res = super(SB3MultipleInstanceEnv, self).seed(seed)
@@ -255,22 +222,3 @@ class SB3MultipleInstanceEnv(SubprocVecEnv):
                     remotes.append(remote)
                     break
         return remotes
-
-    def get_attr(self, attr_name: Union[Tuple, List, str], indices: VecEnvIndices = None) -> List[Any]:
-        self.get_attr_async(attr_name)
-        return self.get_attr_wait()
-
-    def get_attr_async(self, attr_name):
-        for remote, n_agents in zip(self.remotes, self.n_agents_per_env):
-            remote.send(("get_attr", attr_name))
-
-        self.waiting_attr = True
-
-    def get_attr_wait(self):
-        data = []
-
-        for remote, n_agents in zip(self.remotes, self.n_agents_per_env):
-            data.append(remote.recv())
-
-        self.waiting_attr = False
-        return data
