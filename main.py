@@ -1,17 +1,14 @@
 import re
-import warnings
-from collections import Counter
 
 import numpy as np
+from rlgym_sim.envs import Match
 from rlgym_tools.sb3_utils.sb3_log_reward import SB3CombinedLogReward, SB3CombinedLogRewardCallback
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import VecMonitor, VecNormalize, VecCheckNan
 from stable_baselines3.ppo import MlpPolicy
 
-from MyPPO import MyPPO
 from StateSetters import ProbabilisticStateSetter
-
-from match import DynamicGMMatchSim
 from sb3_multi_inst_env import SB3MultipleInstanceEnv
 
 frame_skip = 8  # Number of ticks to repeat an action
@@ -19,37 +16,27 @@ half_life_seconds = 5  # Easier to conceptualize, after this many seconds the re
 
 fps = 120 / frame_skip
 gamma = np.exp(np.log(0.5) / (fps * half_life_seconds))  # Quick mafs
-agents_per_match = 6
-target_steps = 10_000
+agents_per_match = 1
+target_steps = 100_000
 
-models = {
-    "default": 1,
-    "aerial": 2
-}
-
-num_instances = sum(list(models.values()))
+num_instances = 3
 
 steps = target_steps // (num_instances * agents_per_match)  # making sure the experience counts line up properly
-batch_size = target_steps // 10  # getting the batch size down to something more manageable - 100k in this case
+batch_size = steps * num_instances * agents_per_match * 2  # getting the batch size down to something more manageable - 100k in this case
 training_interval = 20_000
 mmr_save_frequency = 50_000_000
+exit_if_load_fails = True
 
 if __name__ == "__main__":
 
     from config import version_dict, Configuration
 
-    all_configs = list(models.keys())
 
+    def create_match():
 
-    def create_match(version):
-        if version not in version_dict:
-            warnings.warn(f"Version '{version}' is not in the config dictionary, "
-                          f"possible keys are {list(version_dict.keys())}, switching version to default")
-            version = "default"
+        match_config: Configuration = version_dict["default"]
 
-        match_config: Configuration = version_dict[version]
-
-        return DynamicGMMatchSim(
+        return Match(
             team_size=match_config.team_size,
             reward_function=SB3CombinedLogReward(
                 reward_functions=match_config.rewards[0],
@@ -63,16 +50,11 @@ if __name__ == "__main__":
                 states=match_config.state_setter[0],
                 probs=match_config.state_setter[1]
             ),
-            action_parser=match_config.action_parser,
-            gm_weights=[0.1, 0.8, 0.1]
+            action_parser=match_config.action_parser
         )
 
-    all_matches = []
-    for model, n in zip(models.keys(), models.values()):
-        for _ in range(n):
-            all_matches.append(create_match(model))
 
-    env = SB3MultipleInstanceEnv(all_matches,
+    env = SB3MultipleInstanceEnv(create_match,
                                  num_instances=num_instances)
     env = VecCheckNan(env)  # Optional
     env = VecMonitor(env)  # Recommended, logs mean reward and ep_len to Tensorboard
@@ -80,18 +62,36 @@ if __name__ == "__main__":
 
 
     def exit_save(model):
-        model.save(f"models/exit_save")
+        model.save("models/exit_save")
 
     try:
-        model = MyPPO.load(
-            f"models/exit_save.zip",
+        model = PPO.load(
+            "models/exit_save",
             env,
             device="cuda",
-            custom_objects={"num_envs": env.num_envs}
+            custom_objects={
+                "num_envs": env.num_envs,
+                "n_steps": steps,
+                "batch_size": batch_size,
+            },
         )
         print("Loaded previous exit save.")
-    except:
-        print("No saved model found, creating new model.")
+
+        params = ["num_timesteps", "batch_size", "action_space", "n_steps", "n_envs", "device"]
+        biggest_str = len(max(params, key=lambda x: len(x)))
+
+        print("Model status: ")
+
+        for attr in params:
+            print(f"\t{attr: <{biggest_str + 4}} {model.__dict__[attr]:{'_' if isinstance(model.__dict__[attr], (int, float)) else ''}}")
+
+
+    except Exception as e:
+        print(f"No saved model found due to {e.__class__.__name__}. (Message : {str(e)})")
+        if exit_if_load_fails:
+            print("You set the \"exit_if_load_fails\" attribute to True, loading failed, exiting")
+            exit(1)
+        print("Creating a new model")
         from torch.nn import LeakyReLU
 
         policy_kwargs = dict(
@@ -101,7 +101,7 @@ if __name__ == "__main__":
                 vf=[512, 512, 512])],
         )
 
-        model = MyPPO(
+        model = PPO(
             MlpPolicy,
             env,
             n_epochs=10,  # PPO calls for multiple epochs
@@ -125,29 +125,18 @@ if __name__ == "__main__":
     def rewards_to_text(rewards):
         return list([re.sub(r"(\w)([A-Z])", r"\1 \2", reward.__class__.__name__) for reward in rewards])
 
-
-    all_rewards = []
-    for c in all_configs:
-        if c not in version_dict:
-            c = "default"
-
-        all_rewards.extend(version_dict[c].rewards[0])
-
-    all_rewards = tuple([i for i, c in Counter(all_rewards).items() if c == 1])
-
-    reward_legends = rewards_to_text(all_rewards)
+    reward_legends = rewards_to_text(version_dict["default"].rewards[0])
 
     # may need to reset timesteps when you're running a different number of instances than when you saved the model
     callback = CheckpointCallback(round(5_000_000 / env.num_envs), save_path="models",
-                                  name_prefix=f"rl_model")
+                                  name_prefix="rl_model")
 
     try:
         mmr_model_target_count = model.num_timesteps + mmr_save_frequency
         while True:
             model.learn(training_interval,
                         callback=[callback, SB3CombinedLogRewardCallback(reward_names=reward_legends)],
-                        reset_num_timesteps=False)  # can ignore callback if training_interval < callback target
-            # model.save(f"models/{Worker.current_model}/exit_save")
+                        reset_num_timesteps=False)
             if model.num_timesteps >= mmr_model_target_count:
                 model.save(f"mmr_models/{model.num_timesteps}")
                 mmr_model_target_count += mmr_save_frequency
