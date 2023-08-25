@@ -1,4 +1,14 @@
 import math
+import os
+import warnings
+from abc import ABC, abstractmethod
+from pickle import UnpicklingError
+
+from rlgym.rocket_league.api import GameState
+from rlgym.rocket_league.state_mutators import MutatorSequence
+from typing import Dict, Any, NamedTuple, Iterable
+
+from rlgym.api import StateMutator, StateType
 import random
 from collections import namedtuple
 
@@ -11,7 +21,6 @@ from rlgym_sim.utils.math import rand_vec3
 from rlgym_sim.utils.state_setters import StateSetter
 from rlgym_sim.utils.state_setters import StateWrapper
 from rlgym_sim.utils.state_setters.wrappers import CarWrapper
-from rlgym_tools.extra_state_setters.replay_setter import ReplaySetter
 
 LIM_X = SIDE_WALL_X - 1152 / 2 - BALL_RADIUS * 2 ** 0.5
 LIM_Y = BACK_WALL_Y - 1152 / 2 - BALL_RADIUS * 2 ** 0.5
@@ -33,6 +42,7 @@ GOAL_LINE = 5100
 YAW_MAX = np.pi
 
 DEG_TO_RAD = np.pi / 180
+
 
 def mirror(car: CarWrapper, ball_x, ball_y):
     my_car = namedtuple('my_car', 'pos lin_vel rot ang_vel')
@@ -59,6 +69,7 @@ def mirror(car: CarWrapper, ball_x, ball_y):
     else:
         return None
     return my_car
+
 
 def set_pos(end_object: PhysicsObject, x: float = None, y: float = None, z: float = None):
     """
@@ -94,7 +105,7 @@ def random_valid_loc() -> np.ndarray:
     return np.asarray([rand_x, rand_y, rand_z])
 
 
-class AerialStateSetter(StateSetter):
+class AerialStateMutator(StateMutator):
     MID_AIR = 900
     LOW_AIR = 150
     HIGH_AIR = 1500
@@ -105,7 +116,7 @@ def compare_arrays_inferior(arr1: np.array, arr2: np.array) -> bool:
     return all(arr1[0:2] < arr2[0:2])
 
 
-def _check_positions(state: StateWrapper) -> bool:
+def _check_positions(state: GameState) -> bool:
     CAR_DIM = np.array((50, 50, 50))
 
     # Checking all others for each car
@@ -127,36 +138,10 @@ def _check_positions(state: StateWrapper) -> bool:
     return True
 
 
-class CustomStateSetter(StateSetter):
-    """def reset(self, state_wrapper: StateWrapper):
-        # Set up our desired spawn location and orientation. Here, we will only change the yaw, leaving the remaining
-        for car in state_wrapper.cars:
+class CustomStateMutator(StateMutator[GameState]):
 
-            desired_car_pos = [random.randint(-4000, 4000), random.randint(-5000, 5000), random.randint(50, int(CEILING_Z) - int(BALL_RADIUS) * 2)]
-            desired_yaw = np.pi / 2
-
-            #print(desired_car_pos)
-
-            if car.team_num == BLUE_TEAM:
-                pos = desired_car_pos
-                yaw = desired_yaw
-
-            elif car.team_num == ORANGE_TEAM:  # invert
-                pos = [-1 * coord for coord in desired_car_pos]
-                yaw = -1 * desired_yaw
-
-            car.set_pos(*pos)
-            car.set_rot(yaw=yaw)
-            car.boost = random.randint(0, 100)
-
-        state_wrapper.ball.set_pos(random.randint(-3000, 3000), random.randint(-3000, 3000),
-                                   random.randint(0 + int(BALL_RADIUS) * 2, int(CEILING_Z) - int(BALL_RADIUS) * 2))"""
-
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
-        state_wrapper.ball.set_pos(
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        state.ball.set_pos(
             x=np.random.uniform(-LIM_X, LIM_X),
             y=np.random.uniform(-LIM_Y, LIM_Y),
             z=np.random.triangular(BALL_RADIUS, BALL_RADIUS, LIM_Z),
@@ -165,16 +150,16 @@ class CustomStateSetter(StateSetter):
         # 99.9% chance of below ball max speed
         ball_speed = np.random.exponential(-BALL_MAX_SPEED / np.log(1 - 0.999))
         vel = rand_vec3(min(ball_speed, BALL_MAX_SPEED))
-        state_wrapper.ball.set_lin_vel(*vel)
+        state.ball.set_lin_vel(*vel)
 
         ang_vel = rand_vec3(np.random.triangular(0, 0, CAR_MAX_ANG_VEL + 0.5))
-        state_wrapper.ball.set_ang_vel(*ang_vel)
+        state.ball.set_ang_vel(*ang_vel)
 
-        for car in state_wrapper.cars:
+        for car in state.cars:
             # On average 1 second at max speed away from ball
             ball_dist = np.random.exponential(BALL_MAX_SPEED)
             ball_car = rand_vec3(ball_dist)
-            car_pos = state_wrapper.ball.position + ball_car
+            car_pos = state.ball.position + ball_car
             if abs(car_pos[0]) < LIM_X \
                     and abs(car_pos[1]) < LIM_Y \
                     and 0 < car_pos[2] < LIM_Z:
@@ -200,13 +185,10 @@ class CustomStateSetter(StateSetter):
             car.boost = np.random.uniform(0, 1)
 
 
-class ShotState(StateSetter):
+class ShotMutator(StateMutator[GameState]):
 
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
-        for car in state_wrapper.cars:
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        for car in state.cars:
             if car.team_num == BLUE_TEAM:
                 car.set_pos(
                     random.uniform(-4096, 4096),
@@ -227,7 +209,7 @@ class ShotState(StateSetter):
                 car.set_ang_vel(*ang_vel)
                 car.boost = np.random.uniform(0, 1)
 
-                state_wrapper.ball.set_pos(
+                state.ball.set_pos(
                     x=np.random.uniform(max(car.position.item(0) - 1000, -LIM_X),
                                         min(car.position.item(0) + 1000, LIM_X)),
                     y=np.random.uniform(car.position.item(1) + 1000, car.position.item(1) + 100),
@@ -236,10 +218,10 @@ class ShotState(StateSetter):
 
                 ball_speed = np.random.exponential(-(BALL_MAX_SPEED / 3) / np.log(1 - 0.999))
                 vel = rand_vec3(min(ball_speed, BALL_MAX_SPEED / 3))
-                state_wrapper.ball.set_lin_vel(*vel)
+                state.ball.set_lin_vel(*vel)
 
                 ang_vel = rand_vec3(np.random.triangular(0, 0, CAR_MAX_ANG_VEL + 0.5))
-                state_wrapper.ball.set_ang_vel(*ang_vel)
+                state.ball.set_ang_vel(*ang_vel)
 
             if car.team_num == ORANGE_TEAM:
                 car.set_pos(
@@ -262,13 +244,10 @@ class ShotState(StateSetter):
                 car.boost = np.random.uniform(0, 1)
 
 
-class JumpShotState(StateSetter):
+class JumpShotMutator(StateMutator[GameState]):
 
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
-        for car in state_wrapper.cars:
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        for car in state.cars:
             if car.team_num == BLUE_TEAM:
                 car.set_pos(
                     random.uniform(-4096, 4096),
@@ -289,7 +268,7 @@ class JumpShotState(StateSetter):
                 car.set_ang_vel(*ang_vel)
                 car.boost = np.random.uniform(0, 1)
 
-                state_wrapper.ball.set_pos(
+                state.ball.set_pos(
                     x=np.random.uniform(max(car.position.item(0) - 1000, -LIM_X),
                                         min(car.position.item(0) + 1000, LIM_X)),
                     y=np.random.uniform(car.position.item(1) + 1500, car.position.item(1) + 500),
@@ -298,10 +277,10 @@ class JumpShotState(StateSetter):
 
                 ball_speed = np.random.uniform(100, BALL_MAX_SPEED / 2)
                 vel = rand_vec3(min(ball_speed, BALL_MAX_SPEED / 2))
-                state_wrapper.ball.set_lin_vel(*vel)
+                state.ball.set_lin_vel(*vel)
 
                 ang_vel = (0, 0, 0)
-                state_wrapper.ball.set_ang_vel(*ang_vel)
+                state.ball.set_ang_vel(*ang_vel)
 
             if car.team_num == ORANGE_TEAM:
                 car.set_pos(
@@ -324,13 +303,10 @@ class JumpShotState(StateSetter):
                 car.boost = np.random.uniform(0, 1)
 
 
-class SaveState(StateSetter):
+class SaveMutator(StateMutator[GameState]):
 
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
-        for car in state_wrapper.cars:
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        for car in state.cars:
             if car.team_num == ORANGE_TEAM:
                 car.set_pos(
                     random.uniform(-4096, 4096),
@@ -351,7 +327,7 @@ class SaveState(StateSetter):
                 car.set_ang_vel(*ang_vel)
                 car.boost = np.random.uniform(0, 1)
 
-                state_wrapper.ball.set_pos(
+                state.ball.set_pos(
                     x=np.random.uniform(max(car.position.item(0) - 1000, -LIM_X),
                                         min(car.position.item(0) + 1000, LIM_X)),
                     y=np.random.uniform(car.position.item(1) - 1000, car.position.item(1) - 100),
@@ -360,10 +336,10 @@ class SaveState(StateSetter):
 
                 ball_speed = np.random.exponential(-(BALL_MAX_SPEED / 3) / np.log(1 - 0.999))
                 vel = rand_vec3(min(ball_speed, BALL_MAX_SPEED / 3))
-                state_wrapper.ball.set_lin_vel(*vel)
+                state.ball.set_lin_vel(*vel)
 
                 ang_vel = rand_vec3(np.random.triangular(0, 0, CAR_MAX_ANG_VEL + 0.5))
-                state_wrapper.ball.set_ang_vel(*ang_vel)
+                state.ball.set_ang_vel(*ang_vel)
 
             if car.team_num == BLUE_TEAM:
                 car.set_pos(
@@ -386,14 +362,10 @@ class SaveState(StateSetter):
                 car.boost = np.random.uniform(0, 1)
 
 
-class AirDribble2Touch(StateSetter):
+class AirDribble2TouchMutator(StateMutator[GameState]):
 
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
-
-        for car in state_wrapper.cars:
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        for car in state.cars:
             if car.team_num == BLUE_TEAM:
 
                 car_x = random.randint(-3500, 3500)
@@ -424,7 +396,7 @@ class AirDribble2Touch(StateSetter):
                     0 + random.uniform(-150, 150)
                 )
 
-                state_wrapper.ball.set_pos(
+                state.ball.set_pos(
                     car_x + random.uniform(-150, 150),
                     car_y + random.uniform(0, 150),
                     car_z + random.uniform(0, 150)
@@ -432,7 +404,7 @@ class AirDribble2Touch(StateSetter):
 
                 ball_lin_y = car_lin_y + random.uniform(-150, 150)
 
-                state_wrapper.ball.set_lin_vel(
+                state.ball.set_lin_vel(
                     0 + random.uniform(-150, 150),
                     ball_lin_y,
                     0 + random.uniform(-150, 150)
@@ -460,7 +432,7 @@ class AirDribble2Touch(StateSetter):
                 car.boost = np.random.uniform(0, 1)
 
 
-class DefaultState(StateSetter):
+class DefaultState(StateMutator[GameState]):
     SPAWN_BLUE_POS = [[-2048, -2560, 17], [2048, -2560, 17],
                       [-256, -3840, 17], [256, -3840, 17], [0, -4608, 17]]
     SPAWN_BLUE_YAW = [0.25 * np.pi, 0.75 * np.pi,
@@ -470,10 +442,7 @@ class DefaultState(StateSetter):
     SPAWN_ORANGE_YAW = [-0.75 * np.pi, -0.25 *
                         np.pi, -0.5 * np.pi, -0.5 * np.pi, -0.5 * np.pi]
 
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
         rand_default_or_diff = random.randint(0, 3)
         # rand_default_or_diff = 0
         # DEFAULT KICKOFFS POSITIONS
@@ -485,7 +454,7 @@ class DefaultState(StateSetter):
 
             blue_count = 0
             orange_count = 0
-            for car in state_wrapper.cars:
+            for car in state.cars:
                 pos = [0, 0, 0]
                 yaw = 0
                 # team_num = 0 = blue team
@@ -529,7 +498,7 @@ class DefaultState(StateSetter):
                     orange_spawn_pos = (abs(posX), abs(posY), posZ)
                     # print(f"Blue Spawn: {blue_spawn_pos} | Orange Spawn {orange_spawn_pos}")
 
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
                         if car.team_num == BLUE_TEAM:
@@ -547,7 +516,7 @@ class DefaultState(StateSetter):
                         vel = rand_vec3(np.random.triangular(0, 0, CAR_MAX_SPEED))
                         car.set_lin_vel(*vel)
                 else:
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
 
@@ -590,7 +559,7 @@ class DefaultState(StateSetter):
                     orange_spawn_pos = (-abs(posX), abs(posY), posZ)
                     # print(f"Blue Spawn: {blue_spawn_pos} | Orange Spawn {orange_spawn_pos}")
 
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
                         if car.team_num == BLUE_TEAM:
@@ -608,7 +577,7 @@ class DefaultState(StateSetter):
                         vel = rand_vec3(np.random.triangular(0, 0, CAR_MAX_SPEED))
                         car.set_lin_vel(*vel)
                 else:
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
 
@@ -655,7 +624,7 @@ class DefaultState(StateSetter):
                         orange_spawn_pos = (0, abs(posY), posZ)
                     # print(f"Blue Spawn: {blue_spawn_pos} | Orange Spawn {orange_spawn_pos}")
 
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
                         if car.team_num == BLUE_TEAM:
@@ -673,7 +642,7 @@ class DefaultState(StateSetter):
                         vel = rand_vec3(np.random.triangular(0, 0, CAR_MAX_SPEED))
                         car.set_lin_vel(*vel)
                 else:
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
 
@@ -725,7 +694,7 @@ class DefaultState(StateSetter):
                         orange_spawn_pos = (0, abs(posY), posZ)
                     # print(f"Blue Spawn: {blue_spawn_pos} | Orange Spawn {orange_spawn_pos}")
 
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
                         if car.team_num == BLUE_TEAM:
@@ -743,7 +712,7 @@ class DefaultState(StateSetter):
                         vel = rand_vec3(np.random.triangular(0, 0, CAR_MAX_SPEED))
                         car.set_lin_vel(*vel)
                 else:
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
 
@@ -790,7 +759,7 @@ class DefaultState(StateSetter):
                     orange_spawn_pos = (posX, abs(posY), posZ)
                     # print(f"Blue Spawn: {blue_spawn_pos} | Orange Spawn {orange_spawn_pos}")
 
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
                         if car.team_num == BLUE_TEAM:
@@ -808,7 +777,7 @@ class DefaultState(StateSetter):
                         vel = rand_vec3(np.random.triangular(0, 0, CAR_MAX_SPEED))
                         car.set_lin_vel(*vel)
                 else:
-                    for car in state_wrapper.cars:
+                    for car in state.cars:
                         final_pos = [0, 0, 0]
                         final_yaw = 0
 
@@ -838,12 +807,9 @@ class DefaultState(StateSetter):
                         car.set_lin_vel(*vel)
 
 
-class AirDribbleSetup(StateSetter):
+class AirDribbleSetupMutator(StateMutator[GameState]):
 
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
         axis_inverter = 1 if random.randrange(2) == 1 else -1
         team_side = 0 if random.randrange(2) == 1 else 1
         team_inverter = 1 if team_side == 0 else -1
@@ -853,14 +819,14 @@ class AirDribbleSetup(StateSetter):
         ball_x_pos = 3000 * axis_inverter
         ball_y_pos = random.randrange(7600) - 3800
         ball_z_pos = BALL_RADIUS
-        state_wrapper.ball.set_pos(ball_x_pos, ball_y_pos, ball_z_pos)
+        state.ball.set_pos(ball_x_pos, ball_y_pos, ball_z_pos)
 
         ball_x_vel = (2000 + (random.randrange(1000) - 500)) * axis_inverter
         ball_y_vel = random.randrange(1000) * team_inverter
         ball_z_vel = 0
-        state_wrapper.ball.set_lin_vel(ball_x_vel, ball_y_vel, ball_z_vel)
+        state.ball.set_lin_vel(ball_x_vel, ball_y_vel, ball_z_vel)
 
-        chosen_car = [car for car in state_wrapper.cars if car.team_num == team_side][0]
+        chosen_car = [car for car in state.cars if car.team_num == team_side][0]
         # if randomly pick, chosen_car is from orange instead
 
         car_x_pos = 2500 * axis_inverter
@@ -876,7 +842,7 @@ class AirDribbleSetup(StateSetter):
         chosen_car.set_rot(car_pitch_rot, car_yaw_rot, car_roll_rot)
         chosen_car.boost = 100
 
-        for car in state_wrapper.cars:
+        for car in state.cars:
             if car is chosen_car:
                 continue
 
@@ -885,24 +851,21 @@ class AirDribbleSetup(StateSetter):
             car.set_rot(0, (random.randrange(360) - 180) * (3.1415927 / 180), 0)
 
 
-class NaNState(StateSetter):
+class NaNStateMutator(StateMutator):
 
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
-        state_wrapper.ball.set_pos(
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        state.ball.set_pos(
             x=1943.54,
             y=-776.12,
             z=406.78,
         )
         vel = (122.79422, -234.43246, 259.7227)
-        state_wrapper.ball.set_lin_vel(*vel)
+        state.ball.set_lin_vel(*vel)
 
         ang_vel = (-0.11868675, 0.10540164, -0.05797875)
-        state_wrapper.ball.set_ang_vel(*ang_vel)
+        state.ball.set_ang_vel(*ang_vel)
 
-        for car in state_wrapper.cars:
+        for car in state.cars:
 
             if car.team_num == 0:
                 car.set_pos(
@@ -944,12 +907,9 @@ class NaNState(StateSetter):
                 car.boost = 0.8792996978759766
 
 
-class SideHighRoll(StateSetter):
+class SideHighRollMutator(StateMutator[GameState]):
 
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
         sidepick = random.randrange(2)
 
         side_inverter = 1
@@ -962,14 +922,14 @@ class SideHighRoll(StateSetter):
         ball_x_pos = 3000 * side_inverter
         ball_y_pos = random.randrange(1500) - 750
         ball_z_pos = BALL_RADIUS
-        state_wrapper.ball.set_pos(ball_x_pos, ball_y_pos, ball_z_pos)
+        state.ball.set_pos(ball_x_pos, ball_y_pos, ball_z_pos)
 
         ball_x_vel = (2000 + random.randrange(1000) - 500) * side_inverter
         ball_y_vel = random.randrange(1500) - 750
         ball_z_vel = random.randrange(300)
-        state_wrapper.ball.set_lin_vel(ball_x_vel, ball_y_vel, ball_z_vel)
+        state.ball.set_lin_vel(ball_x_vel, ball_y_vel, ball_z_vel)
 
-        wall_car_blue = [car for car in state_wrapper.cars if car.team_num == 0][0]
+        wall_car_blue = [car for car in state.cars if car.team_num == 0][0]
 
         # blue car setup
         blue_pitch_rot = 0 * DEG_TO_RAD
@@ -985,8 +945,8 @@ class SideHighRoll(StateSetter):
 
         # orange car setup
         wall_car_orange = None
-        if len(state_wrapper.cars) > 1:
-            wall_car_orange = [car for car in state_wrapper.cars if car.team_num == 1][0]
+        if len(state.cars) > 1:
+            wall_car_orange = [car for car in state.cars if car.team_num == 1][0]
             # orange car setup
             orange_pitch_rot = 0 * DEG_TO_RAD
             orange_yaw_rot = -90 * DEG_TO_RAD
@@ -999,8 +959,8 @@ class SideHighRoll(StateSetter):
             wall_car_orange.set_pos(orange_x, orange_y, orange_z)
             wall_car_orange.boost = 100
 
-        for car in state_wrapper.cars:
-            if len(state_wrapper.cars) == 1 or car is wall_car_orange or car is wall_car_blue:
+        for car in state.cars:
+            if len(state.cars) == 1 or car is wall_car_orange or car is wall_car_blue:
                 continue
 
             # set all other cars randomly in the field
@@ -1008,13 +968,10 @@ class SideHighRoll(StateSetter):
             car.set_rot(0, (random.randrange(360) - 180) * (3.1415927 / 180), 0)
 
 
-class ShortGoalRoll(StateSetter):
+class ShortGoalRollMutator(StateMutator[GameState]):
 
-    def __init__(self):
-        super().__init__()
-
-    def reset(self, state_wrapper: StateWrapper):
-        if len(state_wrapper.cars) > 1:
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        if len(state.cars) > 1:
             defense_team = random.randrange(2)
         else:
             defense_team = 0
@@ -1036,14 +993,14 @@ class ShortGoalRoll(StateSetter):
         ball_x_pos = (-2850 + x_random) * side_inverter
         ball_y_pos = (5120 - BALL_RADIUS) * defense_inverter
         ball_z_pos = 1400 + random.randrange(400) - 200
-        state_wrapper.ball.set_pos(ball_x_pos, ball_y_pos, ball_z_pos)
+        state.ball.set_pos(ball_x_pos, ball_y_pos, ball_z_pos)
 
         ball_x_vel = (1000 + random.randrange(400) - 200) * side_inverter
         ball_y_vel = 0
         ball_z_vel = 550
-        state_wrapper.ball.set_lin_vel(ball_x_vel, ball_y_vel, ball_z_vel)
+        state.ball.set_lin_vel(ball_x_vel, ball_y_vel, ball_z_vel)
 
-        wall_car = [car for car in state_wrapper.cars if car.team_num == defense_team][0]
+        wall_car = [car for car in state.cars if car.team_num == defense_team][0]
 
         wall_car_x = (2000 - random.randrange(500)) * side_inverter
         wall_car_y = 5120 * defense_inverter
@@ -1056,8 +1013,8 @@ class ShortGoalRoll(StateSetter):
         wall_car.set_rot(wall_pitch_rot, wall_yaw_rot, wall_roll_rot)
         wall_car.boost = 25
 
-        if len(state_wrapper.cars) > 1:
-            challenge_car = [car for car in state_wrapper.cars if car.team_num != defense_team][0]
+        if len(state.cars) > 1:
+            challenge_car = [car for car in state.cars if car.team_num != defense_team][0]
             challenge_car.set_pos(0, 1000 * defense_inverter, 0)
 
             challenge_pitch_rot = 0 * DEG_TO_RAD
@@ -1066,30 +1023,30 @@ class ShortGoalRoll(StateSetter):
             challenge_car.set_rot(challenge_pitch_rot, challenge_yaw_rot, challenge_roll_rot)
             challenge_car.boost = 100
 
-        for car in state_wrapper.cars:
-            if len(state_wrapper.cars) == 1 or car is wall_car or car is challenge_car:
+        for car in state.cars:
+            if len(state.cars) == 1 or car is wall_car or car is challenge_car:
                 continue
 
             car.set_pos(random.randrange(2944) - 1472, (-4500 + random.randrange(500) - 250) * defense_inverter, 0)
             car.set_rot(0, (random.randrange(360) - 180) * DEG_TO_RAD, 0)
 
 
-class StandingBallState(StateSetter):
+class StandingBallStateMutator(StateMutator[GameState]):
 
-    def reset(self, state_wrapper: StateWrapper):
-        state_wrapper.ball.set_pos(x=random.Random().randint(-SIDE_WALL_X + 500, SIDE_WALL_X - 500),
-                                   y=0,
-                                   z=random.Random().randint(1000, 1300))
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        state.ball.set_pos(x=random.Random().randint(-SIDE_WALL_X + 500, SIDE_WALL_X - 500),
+                           y=0,
+                           z=random.Random().randint(1000, 1300))
 
-        state_wrapper.ball.set_lin_vel(x=random.uniform(-1000, 1000),
-                                       y=random.uniform(-1000, 1000),
-                                       z=random.uniform(400, 800)
-                                       )
+        state.ball.set_lin_vel(x=random.uniform(-1000, 1000),
+                               y=random.uniform(-1000, 1000),
+                               z=random.uniform(400, 800)
+                               )
 
         blue_team = []
         orange_team = []
 
-        for player in state_wrapper.cars:
+        for player in state.cars:
 
             x = 0
             y = 0
@@ -1114,8 +1071,8 @@ class StandingBallState(StateSetter):
                                                     choice.position.item(0) + 500)
 
                 else:
-                    x = random.Random().randint(state_wrapper.ball.position.item(0) - 300,
-                                                state_wrapper.ball.position.item(0) + 300)
+                    x = random.Random().randint(state.ball.position.item(0) - 300,
+                                                state.ball.position.item(0) + 300)
 
                 orange_team.append(player)
             else:
@@ -1138,8 +1095,8 @@ class StandingBallState(StateSetter):
 
                 else:
                     x = random.Random().randint(
-                        state_wrapper.ball.position.item(0) - 300,
-                        state_wrapper.ball.position.item(0) + 300)
+                        state.ball.position.item(0) - 300,
+                        state.ball.position.item(0) + 300)
 
             player.set_pos(
                 x=x,
@@ -1149,48 +1106,31 @@ class StandingBallState(StateSetter):
             player.boost = 100
 
 
-class AerialBallState(StateSetter):
-    def __init__(self):
-        super().__init__()
-        self.observators = []
+class AerialBallStateMutator(StateMutator[GameState]):
 
-    def reset(self, state_wrapper: StateWrapper):
-
-        if len(self.observators) != 0:
-            distances = []
-            for player in state_wrapper.cars:
-                dist = math.sqrt((state_wrapper.ball.position.item(0) - player.position.item(0)) ** 2 +
-                                 (state_wrapper.ball.position.item(1) - player.position.item(1)) ** 2 +
-                                 (state_wrapper.ball.position.item(2) - player.position.item(2)) ** 2)
-                distances.append(dist)
-
-            distance = np.mean(distances)
-
-            for obs in self.observators:
-                obs.update(distance=float(distance))
-
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
         xthreshold = 1800
         ythreshold = 1200
         zthreshold = 500
 
         # Ball position
-        state_wrapper.ball.set_pos(x=np.random.randint(-SIDE_WALL_X + xthreshold,
-                                                       SIDE_WALL_X - xthreshold),
+        state.ball.set_pos(x=np.random.randint(-SIDE_WALL_X + xthreshold,
+                                               SIDE_WALL_X - xthreshold),
 
-                                   y=np.random.randint(-BACK_WALL_Y + ythreshold,
-                                                       BACK_WALL_Y - ythreshold),
+                           y=np.random.randint(-BACK_WALL_Y + ythreshold,
+                                               BACK_WALL_Y - ythreshold),
 
-                                   z=np.random.randint(zthreshold,
-                                                       CEILING_Z - 2 * zthreshold)
-                                   )
+                           z=np.random.randint(zthreshold,
+                                               CEILING_Z - 2 * zthreshold)
+                           )
 
         # Ball speed
-        state_wrapper.ball.set_lin_vel(x=np.random.randint(500, 1000),
-                                       y=np.random.randint(500, 1000),
-                                       z=np.random.randint(500, 1000)
-                                       )
+        state.ball.set_lin_vel(x=np.random.randint(500, 1000),
+                               y=np.random.randint(500, 1000),
+                               z=np.random.randint(500, 1000)
+                               )
 
-        for player in state_wrapper.cars:
+        for player in state.cars:
             player.set_pos(x=np.random.randint(-SIDE_WALL_X + xthreshold,
                                                SIDE_WALL_X - xthreshold),
                            y=np.random.randint(-BACK_WALL_Y + ythreshold,
@@ -1198,19 +1138,6 @@ class AerialBallState(StateSetter):
                            z=30)
 
             player.boost = 100
-
-            # player.set_rot(pitch=random.Random().random() * np.pi,
-            #                yaw=random.Random().random() * np.pi,
-            #                roll=random.Random().random() * np.pi
-            #                )
-            #
-            # player.set_lin_vel(x=np.random.randint(0, constants.CAR_MAX_SPEED),
-            #                    y=np.random.randint(0, constants.CAR_MAX_SPEED),
-            #                    z=np.random.randint(0, constants.CAR_MAX_SPEED)
-            #                    )
-
-    '''def bind_to(self, ball_register: BallDistRegisterer):
-        self.observators.append(ball_register)'''
 
 
 def probs_function(number):
@@ -1220,15 +1147,33 @@ def probs_function(number):
         return -4 * pow(number + 0.5, 2) + 1
 
 
-class DynamicScoredReplaySetter(ReplaySetter):
-    def __init__(self, ones_file: str, twos_file: str, threes_file: str):
-        print("Loading 1s replays...")
-        data1s = np.load(ones_file)
-        print("Loading 2s replays...")
-        data2s = np.load(twos_file)
-        print("Loading 3s replays...")
-        data3s = np.load(threes_file)
-        print("Loading done")
+class ReplayMutator(StateMutator[GameState], ABC):
+    def __init__(self, *replay_files, verbose: int = 0):
+
+        self.data = []
+
+        for file in replay_files:
+            try:
+                print(f"Loading {file}") if verbose > 0 else None
+                self.data.append(np.array(np.load(file)))
+                print(f"{file} loaded") if verbose > 0 else None
+            except Exception as e:
+                print(f"Caught {type(e).__class__.__name__}, ignoring {file} (Exception message : {str(e)}")
+        print("Loading done") if verbose > 0 else None
+
+    @abstractmethod
+    def generate_probabilities(self):
+        pass
+
+
+class DynamicScoredReplayMutator(ReplayMutator):
+
+    def __init__(self, *replay_files, verbose: int = 0):
+        super().__init__(*replay_files, verbose)
+
+        data1s = self.data[0]
+        data2s = self.data[1]
+        data3s = self.data[2]
 
         mask = ~np.isnan(data1s["states"]).any(axis=1) & ~np.isnan(data1s["scores"])
         self.states1s = data1s["states"][mask]
@@ -1251,18 +1196,17 @@ class DynamicScoredReplaySetter(ReplaySetter):
         self.scores = self.scores1s
         super().__init__(self.states1s)
 
-
     def generate_probabilities(self):
         scores = np.vectorize(probs_function)(self.scores)
         probs = scores / scores.sum()
         return probs
 
-    def reset(self, state_wrapper: StateWrapper):
-        if len(state_wrapper.cars) == 6:
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        if len(state.cars) == 6:
             self.states = self.states3s
             self.scores = self.scores3s
             self.probabilities = self.probs3s
-        elif len(state_wrapper.cars) == 4:
+        elif len(state.cars) == 4:
             self.states = self.states2s
             self.scores = self.scores2s
             self.probabilities = self.probs2s
@@ -1272,28 +1216,28 @@ class DynamicScoredReplaySetter(ReplaySetter):
             self.probabilities = self.probs1s
 
         self.generate_probabilities()
-        super(DynamicScoredReplaySetter, self).reset(state_wrapper)
+        super(DynamicScoredReplayMutator, self).apply(state, shared_info)
 
-class RecoverySetter(StateSetter):
+
+class RecoveryMutator(StateMutator[GameState]):
+
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False):
         self.ball_zero_z = ball_zero_z
         self.ball_vel_mult = ball_vel_mult
-        self.zero_boost_weight=zero_boost_weight
-        self.zero_ball_vel_weight=zero_ball_vel_weight
+        self.zero_boost_weight = zero_boost_weight
+        self.zero_ball_vel_weight = zero_ball_vel_weight
         self.rng = np.random.default_rng()
         self.big_boosts = [BOOST_LOCATIONS[i] for i in [3, 4, 15, 18, 29, 30]]
         self.big_boosts = np.asarray(self.big_boosts)
         self.big_boosts[:, -1] = 18
-        # self.end_object_tracker = end_object_tracker
 
-    def reset(self, state_wrapper: StateWrapper):
-
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
         if self.rng.uniform() > self.zero_boost_weight:
             boost = self.rng.uniform(0, 1.000001)
         else:
             boost = 0
 
-        for car in state_wrapper.cars:
+        for car in state.cars:
             car.set_pos(*random_valid_loc())
             car.set_rot(self.rng.uniform(-np.pi / 2, np.pi / 2), self.rng.uniform(-np.pi, np.pi),
                         self.rng.uniform(-np.pi, np.pi))
@@ -1303,17 +1247,17 @@ class RecoverySetter(StateSetter):
 
         # if self.end_object_tracker is not None and self.end_object_tracker[0] != 0:
         loc = random_valid_loc()
-        state_wrapper.ball.set_pos(x=loc[0], y=loc[1], z=94)
+        state.ball.set_pos(x=loc[0], y=loc[1], z=94)
         if self.rng.uniform() > self.zero_ball_vel_weight:
-            state_wrapper.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-200, 200),
-                                           self.ball_vel_mult * self.rng.uniform(-200, 200),
-                                           0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
+            state.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-200, 200),
+                                   self.ball_vel_mult * self.rng.uniform(-200, 200),
+                                   0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
         else:
-            state_wrapper.ball.set_lin_vel(0, 0, 0)
-        state_wrapper.ball.set_ang_vel(0, 0, 0)
+            state.ball.set_lin_vel(0, 0, 0)
+        state.ball.set_ang_vel(0, 0, 0)
 
 
-class HalfFlip(StateSetter):
+class HalfFlipMutator(StateMutator[GameState]):
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False):
         self.ball_zero_z = ball_zero_z
         self.ball_vel_mult = ball_vel_mult
@@ -1321,35 +1265,33 @@ class HalfFlip(StateSetter):
         self.zero_boost_weight = zero_boost_weight
         self.rng = np.random.default_rng()
 
-    def reset(self, state_wrapper: StateWrapper):
-        assert len(state_wrapper.cars) < 3
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        assert len(state.cars) < 3
         zero_ball_vel = True
         if self.rng.uniform() > self.zero_ball_vel_weight:
             zero_ball_vel = False
         y = 0
         x = self.rng.uniform(-1500, 1500)
-        state_wrapper.ball.set_pos(x, y, 94)
+        state.ball.set_pos(x, y, 94)
         if zero_ball_vel:
-            state_wrapper.ball.set_lin_vel(0, 0, 0)
+            state.ball.set_lin_vel(0, 0, 0)
         else:
-            state_wrapper.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if y == 0 and x != 0 else 0,
-                                           self.ball_vel_mult * self.rng.uniform(-600, 600) if x == 0 and y != 0 else 0,
-                                           0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
-        state_wrapper.ball.set_ang_vel(0, 0, 0)
+            state.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if y == 0 and x != 0 else 0,
+                                   self.ball_vel_mult * self.rng.uniform(-600, 600) if x == 0 and y != 0 else 0,
+                                   0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
+        state.ball.set_ang_vel(0, 0, 0)
         if self.rng.uniform() > self.zero_boost_weight:
             boost = self.rng.uniform(0, 1.000001)
         else:
             boost = 0
-        for car in state_wrapper.cars:
+        for car in state.cars:
             if car.id == 1:
                 car.set_pos(x, y - 2500)
                 car.set_rot(0, (-np.pi * 0.5) + self.rng.uniform(-0.04, 0.04) * np.pi, 0)
                 car.set_lin_vel(0, 0, 0)
                 car.set_ang_vel(0, 0, 0)
             else:
-                values = mirror(state_wrapper.cars[0], x, y)
-                # values_pos = [*values.pos]
-                # values_pos[0] += 100  # stop dropping on top of each other
+                values = mirror(state.cars[0], x, y)
                 car.set_pos(*values.pos)
                 car.set_rot(*values.rot)
                 car.set_lin_vel(*values.lin_vel)
@@ -1357,7 +1299,7 @@ class HalfFlip(StateSetter):
             car.boost = boost
 
 
-class Wavedash(StateSetter):
+class WavedashMutator(StateMutator[GameState]):
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False):
         self.ball_zero_z = ball_zero_z
         self.ball_vel_mult = ball_vel_mult
@@ -1365,35 +1307,33 @@ class Wavedash(StateSetter):
         self.zero_ball_vel_weight = zero_ball_vel_weight
         self.rng = np.random.default_rng()
 
-    def reset(self, state_wrapper: StateWrapper):
-        assert len(state_wrapper.cars) < 3
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        assert len(state.cars) < 3
         zero_ball_vel = True
         if self.rng.uniform() > self.zero_ball_vel_weight:
             zero_ball_vel = False
         y = 0
         x = self.rng.uniform(-1500, 1500)
-        state_wrapper.ball.set_pos(x, y, 94)
+        state.ball.set_pos(x, y, 94)
         if zero_ball_vel:
-            state_wrapper.ball.set_lin_vel(0, 0, 0)
+            state.ball.set_lin_vel(0, 0, 0)
         else:
-            state_wrapper.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if y == 0 and x != 0 else 0,
-                                           self.ball_vel_mult * self.rng.uniform(-600, 600) if x == 0 and y != 0 else 0,
-                                           0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
-        state_wrapper.ball.set_ang_vel(0, 0, 0)
+            state.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if y == 0 and x != 0 else 0,
+                                   self.ball_vel_mult * self.rng.uniform(-600, 600) if x == 0 and y != 0 else 0,
+                                   0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
+        state.ball.set_ang_vel(0, 0, 0)
         if self.rng.uniform() > self.zero_boost_weight:
             boost = self.rng.uniform(0, 1.000001)
         else:
             boost = 0
-        for car in state_wrapper.cars:
+        for car in state.cars:
             if car.id == 1:
                 car.set_pos(x + self.rng.uniform(-500, 500), y - 2500, self.rng.uniform(50, 350))
                 car.set_rot(0, np.pi * 0.5, 0)
                 car.set_lin_vel(0, 0, 0)
                 car.set_ang_vel(0, 0, 0)
             else:
-                values = mirror(state_wrapper.cars[0], x, y)
-                # values_pos = [*values.pos]
-                # values_pos[0] += 100  # stop dropping on top of each other
+                values = mirror(state.cars[0], x, y)
                 car.set_pos(*values.pos)
                 car.set_rot(*values.rot)
                 car.set_lin_vel(*values.lin_vel)
@@ -1401,7 +1341,7 @@ class Wavedash(StateSetter):
             car.boost = boost
 
 
-class Chaindash(StateSetter):
+class ChaindashMutator(StateMutator[GameState]):
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False):
         self.ball_zero_z = ball_zero_z
         self.ball_vel_mult = ball_vel_mult
@@ -1409,8 +1349,8 @@ class Chaindash(StateSetter):
         self.zero_ball_vel_weight = zero_ball_vel_weight
         self.rng = np.random.default_rng()
 
-    def reset(self, state_wrapper: StateWrapper):
-        assert len(state_wrapper.cars) < 3
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        assert len(state.cars) < 3
         zero_ball_vel = True
         if self.rng.uniform() > self.zero_ball_vel_weight:
             zero_ball_vel = False
@@ -1420,31 +1360,32 @@ class Chaindash(StateSetter):
         else:
             y = 0
             x = self.rng.uniform(-1500, 1500)
-        state_wrapper.ball.set_pos(x, y, 94)
+        state.ball.set_pos(x, y, 94)
         if zero_ball_vel:
-            state_wrapper.ball.set_lin_vel(0, 0, 0)
+            state.ball.set_lin_vel(0, 0, 0)
         else:
-            state_wrapper.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if y == 0 and x != 0 else 0,
-                                           self.ball_vel_mult * self.rng.uniform(-600, 600) if x == 0 and y != 0 else 0,
-                                           0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
-        state_wrapper.ball.set_ang_vel(0, 0, 0)
+            state.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if y == 0 and x != 0 else 0,
+                                   self.ball_vel_mult * self.rng.uniform(-600, 600) if x == 0 and y != 0 else 0,
+                                   0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
+        state.ball.set_ang_vel(0, 0, 0)
         if self.rng.uniform() > self.zero_boost_weight:
             boost = self.rng.uniform(0, 1.000001)
         else:
             boost = 0
-        for car in state_wrapper.cars:
+        for car in state.cars:
             if car.id == 1:
-                car.set_pos(x + self.rng.uniform(-500, 500), max(-3900, y - self.rng.uniform(3000, 5000)), self.rng.uniform(50, 350))
-                car.set_rot(self.rng.uniform(-np.pi/8, np.pi/8),
+                car.set_pos(x + self.rng.uniform(-500, 500), max(-3900, y - self.rng.uniform(3000, 5000)),
+                            self.rng.uniform(50, 350))
+                car.set_rot(self.rng.uniform(-np.pi / 8, np.pi / 8),
                             self.rng.uniform(-np.pi, np.pi),
-                            self.rng.uniform(-np.pi/8, np.pi/8))
-                ball_sign = -1 if state_wrapper.cars[0].position[1] - y > 0 else 1
+                            self.rng.uniform(-np.pi / 8, np.pi / 8))
+                ball_sign = -1 if state.cars[0].position[1] - y > 0 else 1
                 car.set_lin_vel(self.rng.uniform(-50, 50),
                                 ball_sign * self.rng.uniform(600, 2000),
                                 self.rng.uniform(-50, 1))
                 car.set_ang_vel(self.rng.uniform(-1, 1), self.rng.uniform(-1, 1), self.rng.uniform(-1, 1))
             else:
-                values = mirror(state_wrapper.cars[0], x, y)
+                values = mirror(state.cars[0], x, y)
                 car.set_pos(*values.pos)
                 car.set_rot(*values.rot)
                 car.set_lin_vel(*values.lin_vel)
@@ -1452,7 +1393,7 @@ class Chaindash(StateSetter):
             car.boost = boost
 
 
-class RandomEvenRecovery(StateSetter):
+class RandomEvenRecoveryMutator(StateMutator[GameState]):
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False):
         self.ball_zero_z = ball_zero_z
         self.ball_vel_mult = ball_vel_mult
@@ -1460,8 +1401,8 @@ class RandomEvenRecovery(StateSetter):
         self.zero_ball_vel_weight = zero_ball_vel_weight
         self.rng = np.random.default_rng()
 
-    def reset(self, state_wrapper: StateWrapper):
-        assert len(state_wrapper.cars) < 3
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        assert len(state.cars) < 3
         zero_ball_vel = True
         if self.rng.uniform() > self.zero_ball_vel_weight:
             zero_ball_vel = False
@@ -1475,30 +1416,30 @@ class RandomEvenRecovery(StateSetter):
             ball_sign = 1
         else:
             ball_sign = -1
-        state_wrapper.ball.set_pos(x, y, 94)
+        state.ball.set_pos(x, y, 94)
         if zero_ball_vel:
-            state_wrapper.ball.set_lin_vel(0, 0, 0)
+            state.ball.set_lin_vel(0, 0, 0)
         else:
-            state_wrapper.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if y == 0 and x != 0 else 0,
-                                           self.ball_vel_mult * self.rng.uniform(-600, 600) if x == 0 and y != 0 else 0,
-                                           0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
-        state_wrapper.ball.set_ang_vel(0, 0, 0)
+            state.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if y == 0 and x != 0 else 0,
+                                   self.ball_vel_mult * self.rng.uniform(-600, 600) if x == 0 and y != 0 else 0,
+                                   0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
+        state.ball.set_ang_vel(0, 0, 0)
         if self.rng.uniform() > self.zero_boost_weight:
             boost = self.rng.uniform(0, 1.000001)
         else:
             boost = 0
-        for car in state_wrapper.cars:
+        for car in state.cars:
             if car.id == 1:
                 car.set_pos(self.rng.uniform(-1000, 1000), y - 2500, self.rng.uniform(50, 350))
-                car.set_rot(self.rng.uniform(-np.pi/2, np.pi/2),
+                car.set_rot(self.rng.uniform(-np.pi / 2, np.pi / 2),
                             self.rng.uniform(-np.pi, np.pi),
-                            self.rng.uniform(-np.pi/2, np.pi/2))
+                            self.rng.uniform(-np.pi / 2, np.pi / 2))
                 car.set_lin_vel(self.rng.uniform(-1500, 1500),
                                 ball_sign * self.rng.uniform(-1500, 1500),
                                 self.rng.uniform(-50, -1))
                 car.set_ang_vel(self.rng.uniform(-4, 4), self.rng.uniform(-4, 4), self.rng.uniform(-4, 4))
             else:
-                values = mirror(state_wrapper.cars[0], x, y)
+                values = mirror(state.cars[0], x, y)
                 car.set_pos(*values.pos)
                 car.set_rot(*values.rot)
                 car.set_lin_vel(*values.lin_vel)
@@ -1506,7 +1447,7 @@ class RandomEvenRecovery(StateSetter):
             car.boost = boost
 
 
-class Curvedash(StateSetter):
+class CurvedashMutator(StateMutator[GameState]):
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False):
         self.ball_zero_z = ball_zero_z
         self.ball_vel_mult = ball_vel_mult
@@ -1514,8 +1455,8 @@ class Curvedash(StateSetter):
         self.zero_ball_vel_weight = zero_ball_vel_weight
         self.rng = np.random.default_rng()
 
-    def reset(self, state_wrapper: StateWrapper):
-        assert len(state_wrapper.cars) < 3
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        assert len(state.cars) < 3
         zero_ball_vel = True
         if self.rng.uniform() > self.zero_ball_vel_weight:
             zero_ball_vel = False
@@ -1525,19 +1466,20 @@ class Curvedash(StateSetter):
         else:
             ball_x = self.rng.uniform(-2500, 2500)
             ball_y = 0
-        state_wrapper.ball.set_pos(ball_x, ball_y, 94)
+        state.ball.set_pos(ball_x, ball_y, 94)
         if zero_ball_vel:
-            state_wrapper.ball.set_lin_vel(0, 0, 0)
+            state.ball.set_lin_vel(0, 0, 0)
         else:
-            state_wrapper.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_y == 0 and ball_x != 0 else 0,
-                                           self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_x == 0 and ball_y != 0 else 0,
-                                           0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
-        state_wrapper.ball.set_ang_vel(0, 0, 0)
+            state.ball.set_lin_vel(
+                self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_y == 0 and ball_x != 0 else 0,
+                self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_x == 0 and ball_y != 0 else 0,
+                0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
+        state.ball.set_ang_vel(0, 0, 0)
         if self.rng.uniform() > self.zero_boost_weight:
             boost = self.rng.uniform(0, 1.000001)
         else:
             boost = 0
-        for car in state_wrapper.cars:
+        for car in state.cars:
             if car.id == 1:
                 neg = self.rng.choice([-1, 1])
                 car.set_pos(neg * (SIDE_WALL_X - 17),
@@ -1547,7 +1489,7 @@ class Curvedash(StateSetter):
                 car.set_lin_vel(0, 0, -self.rng.uniform(300, 1000))
                 car.set_ang_vel(0, 0, 0)
             else:
-                values = mirror(state_wrapper.cars[0], ball_x, ball_y)
+                values = mirror(state.cars[0], ball_x, ball_y)
                 car.set_pos(*values.pos)
                 car.set_rot(*values.rot)
                 car.set_lin_vel(*values.lin_vel)
@@ -1555,7 +1497,7 @@ class Curvedash(StateSetter):
             car.boost = boost
 
 
-class Walldash(StateSetter):
+class WalldashMutator(StateMutator[GameState]):
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False,
                  end_object: PhysicsObject = None,
                  location: str = None,
@@ -1574,22 +1516,22 @@ class Walldash(StateSetter):
         self.end_object = end_object
         self.location = location
 
-    def reset(self, state_wrapper: StateWrapper):
-        assert len(state_wrapper.cars) < 3
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        assert len(state.cars) < 3
         zero_ball_vel = True
         if self.location is None:
             if self.rng.uniform() > self.zero_ball_vel_weight:
                 zero_ball_vel = False
             ball_x = 0
             ball_y = self.rng.uniform(-2500, 2500)
-            state_wrapper.ball.set_pos(ball_x, ball_y, 94)
+            state.ball.set_pos(ball_x, ball_y, 94)
             if zero_ball_vel:
-                state_wrapper.ball.set_lin_vel(0, 0, 0)
+                state.ball.set_lin_vel(0, 0, 0)
             else:
-                state_wrapper.ball.set_lin_vel(0,
-                                               self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_y != 0 else 0,
-                                               0 if self.ball_zero_z else self.rng.uniform(-200, 200))
-            state_wrapper.ball.set_ang_vel(0, 0, 0)
+                state.ball.set_lin_vel(0,
+                                       self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_y != 0 else 0,
+                                       0 if self.ball_zero_z else self.rng.uniform(-200, 200))
+            state.ball.set_ang_vel(0, 0, 0)
             if ball_y >= 0:
                 ball_sign = 1
             else:
@@ -1598,12 +1540,12 @@ class Walldash(StateSetter):
             ball_y = 0
             ball_x = 0
             ball_sign = 1
-            state_wrapper.ball.set_pos(0, 0, 94)
+            state.ball.set_pos(0, 0, 94)
         if self.rng.uniform() > self.zero_boost_weight:
             boost = self.rng.uniform(0, 1.000001)
         else:
             boost = 0
-        for car in state_wrapper.cars:
+        for car in state.cars:
             if car.id == 1:
                 neg = self.rng.choice([-1, 1])
                 if self.location is None:
@@ -1614,7 +1556,7 @@ class Walldash(StateSetter):
                     car.set_lin_vel(0, ball_sign * self.rng.uniform(300, 1000), 0)
                     car.set_ang_vel(0, 0, 0)
                 elif self.location == "90":
-                    #object_y = self.rng.choice([-1, 1])
+                    # object_y = self.rng.choice([-1, 1])
                     x = neg * (SIDE_WALL_X - 17)
                     y = self.rng.uniform(-3500, 3500)
                     car.set_pos(x,
@@ -1639,12 +1581,14 @@ class Walldash(StateSetter):
                         pitch_mod = object_y
                     else:
                         pitch_mod = -object_y
-                    car.set_rot(((180 if object_y == -1 else 0) + (45 * pitch_mod) + self.rng.uniform(-10, 10)) * DEG_TO_RAD,
-                                90 * DEG_TO_RAD,
-                                90 * DEG_TO_RAD * neg)
+                    car.set_rot(
+                        ((180 if object_y == -1 else 0) + (45 * pitch_mod) + self.rng.uniform(-10, 10)) * DEG_TO_RAD,
+                        90 * DEG_TO_RAD,
+                        90 * DEG_TO_RAD * neg)
                     speed = self.rng.uniform(self.min_car_vel, self.max_car_vel)
                     car.set_lin_vel(0, speed * object_y * 0.707, speed * 0.707 * (1 if object_pos_45 else -1))
-                    set_pos(end_object=self.end_object, x=x, y=y + (dist_yz * object_y * 0.707), z=z + (dist_yz * 0.5 * (1 if object_pos_45 else -1)))
+                    set_pos(end_object=self.end_object, x=x, y=y + (dist_yz * object_y * 0.707),
+                            z=z + (dist_yz * 0.5 * (1 if object_pos_45 else -1)))
                 elif self.location == "same_z":
                     object_y = self.rng.choice([-1, 1])
                     dist_yz = 2400
@@ -1670,15 +1614,15 @@ class Walldash(StateSetter):
                     ball_x = neg * (SIDE_WALL_X - BALL_RADIUS)
                     ball_y = self.rng.uniform(-1500, 3500) * object_y
                     ball_z = self.rng.uniform(300, 1700)
-                    state_wrapper.ball.set_pos(ball_x, ball_y, ball_z)
+                    state.ball.set_pos(ball_x, ball_y, ball_z)
                     if zero_ball_vel:
-                        state_wrapper.ball.set_lin_vel(0, 0, 0)
+                        state.ball.set_lin_vel(0, 0, 0)
                     else:
-                        state_wrapper.ball.set_lin_vel(0,
-                                                       self.ball_vel_mult * self.rng.uniform(-600,
-                                                                                             600),
-                                                       self.ball_vel_mult * self.rng.uniform(-200, 200))
-                    state_wrapper.ball.set_ang_vel(0, 0, 0)
+                        state.ball.set_lin_vel(0,
+                                               self.ball_vel_mult * self.rng.uniform(-600,
+                                                                                     600),
+                                               self.ball_vel_mult * self.rng.uniform(-200, 200))
+                    state.ball.set_ang_vel(0, 0, 0)
                     x = neg * (SIDE_WALL_X - 17)
                     y = ball_y - (dist_yz * object_y)
                     z = self.rng.uniform(300, 1600)
@@ -1699,9 +1643,9 @@ class Walldash(StateSetter):
                     ball_x = neg * 3072
                     ball_y = 4096 * object_y
                     ball_z = 17
-                    state_wrapper.ball.set_pos(ball_x, ball_y, ball_z)
-                    state_wrapper.ball.set_lin_vel(0, 0, 0)
-                    state_wrapper.ball.set_ang_vel(0, 0, 0)
+                    state.ball.set_pos(ball_x, ball_y, ball_z)
+                    state.ball.set_lin_vel(0, 0, 0)
+                    state.ball.set_ang_vel(0, 0, 0)
                     x = neg * (SIDE_WALL_X - 17)
                     y = ball_y - (dist_yz * object_y)
                     z = self.rng.uniform(300, 1600)
@@ -1717,7 +1661,7 @@ class Walldash(StateSetter):
                     if self.end_object is not None:
                         set_pos(end_object=self.end_object, x=-1, y=-1, z=-1)
             else:
-                values = mirror(state_wrapper.cars[0], ball_x, ball_y)
+                values = mirror(state.cars[0], ball_x, ball_y)
                 car.set_pos(*values.pos)
                 car.set_rot(*values.rot)
                 car.set_lin_vel(*values.lin_vel)
@@ -1727,29 +1671,37 @@ class Walldash(StateSetter):
 
 all_states = [DefaultState()]
 
-# DynamicScoredReplaySetter(
-#         "../replays/states_scores_duels.npz",
-#         "../replays/states_scores_doubles.npz",
-#         "../replays/states_scores_standard.npz"
-#     )
 
-class ProbabilisticStateSetter(StateSetter):
+class MutatorProb(NamedTuple):
+    mutator: StateMutator[StateType]
+    probability: float
 
-    def __init__(self, states, probs, verbose: int = 1, training: bool = True):
+
+class ProbabilisticStateMutator(StateMutator[StateType]):
+    def __init__(self, mandatory_mutators: Iterable[StateMutator[StateType]], *mutators: MutatorProb, verbose: int = 1, training: bool = True):
         self.old_state = None
         self.verbose = verbose
         self.training = training
-        self.states, self.probs = states, probs
+        self.mutators = mutators
+        self.mandatory_mutators = mandatory_mutators
 
-    def reset(self, state_wrapper: StateWrapper):
+    def apply(self, state: StateType, shared_info: Dict[str, Any]) -> None:
+        rd = random.Random()
         if self.verbose >= 1:
             if self.old_state:
                 print(f"State {self.old_state.__class__.__name__} finished, choosing a new state...")
             else:
-                print(f"Training started, choosing a new state...")
+                print("Training started, choosing a new state...")
+
+        for mutator in self.mandatory_mutators:
+            mutator.apply(state, shared_info)
+
+        print(*zip([(mutator, prob) for mutator, prob in self.mutators]))
 
         if self.training:
-            selected_state = random.choices(self.states, weights=self.probs, k=1)[0]
+            selected_state = rd.choices(
+                *zip([(mutator, prob) for mutator, prob in self.mutators])
+            )[0]
         else:
             selected_state = all_states.pop(0)
 
@@ -1758,5 +1710,5 @@ class ProbabilisticStateSetter(StateSetter):
         if self.verbose >= 1:
             print(f"New state is {selected_state.__class__.__name__}")
 
-        # while not _check_positions(state_wrapper):
-        selected_state.reset(state_wrapper)
+        # while not _check_positions(state):
+        selected_state.apply(state, shared_info)

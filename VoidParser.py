@@ -1,12 +1,29 @@
-from typing import Any
+from rlgym.api import ActionParser, StateType, AgentID, ActionType, EngineActionType, SpaceType
+from typing import Any, Dict
 
 import gym
 import numpy as np
-from rlgym.utils.action_parsers import ActionParser
-from rlgym.utils.gamestates import GameState
 
 
-class ArtemisParser(ActionParser):
+class VoidParser(ActionParser):
+    def get_action_space(self, agent: AgentID) -> SpaceType:
+        return gym.spaces.Discrete(len(self._lookup_table))
+
+    def parse_actions(
+            self,
+            actions: Dict[AgentID, ActionType],
+            state: StateType,
+            shared_info: Dict[str, Any]) -> Dict[AgentID, EngineActionType]:
+        new_actions = {}
+        for agent, action in actions.items():
+            new_actions.setdefault(agent, self._lookup_table[action])
+
+        return new_actions
+
+    def reset(self, initial_state: StateType, shared_info: Dict[str, Any]) -> None:
+        # Don't really care
+        pass
+
     def __init__(self):
         super().__init__()
         self._lookup_table = self.make_lookup_table()
@@ -37,9 +54,3 @@ class ArtemisParser(ActionParser):
                             actions.append([boost, yaw, pitch, yaw, roll, jump, boost, handbrake])
         actions = np.array(actions)
         return actions
-
-    def get_action_space(self) -> gym.spaces.Space:
-        return gym.spaces.Discrete(len(self._lookup_table))
-
-    def parse_actions(self, actions: Any, state: GameState) -> np.ndarray:
-        return np.asarray(actions)
