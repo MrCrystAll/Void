@@ -4,13 +4,15 @@ block scripts
     script(src="javascripts/index.js" type="text/javascript")
 block content
     div
-        button(class="btn btn-outline-dark rounded mx-4 btn-md float-end" type="button") Clear
+        button(class="btn btn-outline-dark rounded mx-4 btn-md float-end" type="button" onclick=`clear_episodes(${JSON.stringify(data)})`) Clear
         button(class="btn btn-outline-dark rounded mx-4 btn-md mb-2" type="button") Show episodes
         if data.length !== 0
             div( id="episodes_card")
                 div(class="d-flex flex-row flex-wrap card p-2 justify-content-center" )
-                    each d, episode in data
+                    - let index = 0
+                    while index < data.length
                         include ../partials/episode_result
+                        - index+=1
 
             div.mt-2
                 h3 Averages
@@ -21,11 +23,11 @@ block content
                             th Average value
                             th Average percentage
                     tbody(class="table-group-divider")
-                        each rew in Object.keys(data[0].rewards)
+                        each rew in data[0].rewards
                             tr
-                                td= rew.substring(0, rew.length - 6).replace(/([A-Z])/g, ' $1').trim()
-                                td= (data.reduce((r, a) => r + a.rewards[rew.toString()].value, 0) / data.length).toFixed(2)
-                                td= `${((data.reduce((r, a) => r + a.rewards[rew.toString()].percentage, 0) / data.length) * 100).toFixed(2)}%`
+                                td= rew.getFormattedName()
+                                //td= (data.reduce((r, a) => r + a.rewards[rew.toString()].value, 0) / data.length).toFixed(2)
+                                //td= `${((data.reduce((r, a) => r + a.rewards[rew.toString()].percentage, 0) / data.length) * 100).toFixed(2)}%`
         else
             div.card
                 p.text-center.align-middle No episodes

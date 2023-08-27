@@ -3,15 +3,17 @@ import warnings
 from collections import Counter
 
 import numpy as np
+from rlgym_sim.utils.reward_functions.common_rewards import EventReward
 from rlgym_tools.sb3_utils.sb3_log_reward import SB3CombinedLogRewardCallback
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import VecMonitor, VecNormalize, VecCheckNan
 from stable_baselines3.ppo import MlpPolicy
 
-from MyPPO import MyPPO
-from Rewards import ObservableSB3CombinedLogReward
+from Rewards import ObservableSB3CombinedLogReward, GoalScoreSpeed, SaveBoostReward, BoostPickupReward, \
+    KickoffReward_MMR, AerialReward, BumpReward, WallReward, FlipReward, ClosestDistToBallReward, WasteSpeedReward
 from StateSetters import ProbabilisticStateSetter
-from match import ObservableDynamicGMMatchSim
+from match import ObservableMatch
 from sb3_multi_inst_env import SB3MultipleInstanceEnv
 
 frame_skip = 8  # Number of ticks to repeat an action
@@ -19,8 +21,8 @@ half_life_seconds = 5  # Easier to conceptualize, after this many seconds the re
 
 fps = 120 / frame_skip
 gamma = np.exp(np.log(0.5) / (fps * half_life_seconds))  # Quick mafs
-agents_per_match = 6
-target_steps = 10_000
+agents_per_match = 4
+target_steps = 40_000
 
 models = {
     "default": 1
@@ -50,13 +52,29 @@ if __name__ == "__main__":
                           f"possible keys are {list(version_dict.keys())}, switching version to default")
             version = "default"
 
+        reward_function = (
+            EventReward(team_goal=120, goal=100, concede=-150, save=70, shot=30, demo=40),
+            GoalScoreSpeed(),
+            SaveBoostReward(),
+            BoostPickupReward(),
+            KickoffReward_MMR(),
+            AerialReward(),
+            BumpReward(),
+            WallReward(),
+            FlipReward(),
+            ClosestDistToBallReward(),
+            WasteSpeedReward()
+        )
+
+        rewards_weight = (0.2, 5, 0.05, 1.5, 0.07, 0.00020, 1.5, 0.000015, 1, 0.035, 0.1)
+
         match_config: Configuration = version_dict[version]
 
-        return ObservableDynamicGMMatchSim(
-            team_size=match_config.team_size,
+        return ObservableMatch(
+            team_size=2,
             reward_function=ObservableSB3CombinedLogReward(
-                reward_functions=match_config.rewards[0],
-                reward_weights=match_config.rewards[1]
+                reward_functions=reward_function,
+                reward_weights=rewards_weight
             ),
             spawn_opponents=match_config.spawn_opponents,
             terminal_conditions=match_config.terminal_conditions,
@@ -66,8 +84,7 @@ if __name__ == "__main__":
                 states=match_config.state_setter[0],
                 probs=match_config.state_setter[1]
             ),
-            action_parser=match_config.action_parser,
-            gm_weights=[0.1, 0.8, 0.1]
+            action_parser=match_config.action_parser
         )
 
 
@@ -87,15 +104,15 @@ if __name__ == "__main__":
 
 
     try:
-        model = MyPPO.load(
+        model = PPO.load(
             f"models/exit_save.zip",
             env,
             device="cuda",
             custom_objects={"num_envs": env.num_envs}
         )
         print("Loaded previous exit save.")
-    except:
-        print("No saved model found, creating new model.")
+    except Exception as e:
+        print(f"No saved model found due to {e}, creating new model.")
         from torch.nn import LeakyReLU
 
         policy_kwargs = dict(
@@ -105,7 +122,7 @@ if __name__ == "__main__":
                 vf=[512, 512, 512])],
         )
 
-        model = MyPPO(
+        model = PPO(
             MlpPolicy,
             env,
             n_epochs=10,  # PPO calls for multiple epochs
@@ -119,7 +136,6 @@ if __name__ == "__main__":
             n_steps=steps,  # Number of steps to perform before optimizing network
             tensorboard_log="logs",  # `tensorboard --logdir out/logs` in terminal to see graphs
             device="cuda",  # Uses GPU if available
-            monitored_prob=1
         )
 
         # Save model every so often
@@ -147,9 +163,23 @@ if __name__ == "__main__":
 
     try:
         mmr_model_target_count = model.num_timesteps + mmr_save_frequency
+        parameter_names = [
+            "Event Reward",
+            "Goal Score Speed",
+            "Save Boost Reward",
+            "Boost Pickup Reward",
+            "Kickoff Reward",
+            "Aerial Reward",
+            "Car Bump Punish",
+            "Wall Reward",
+            "Flip Encouragement",
+            "Closest to Ball Distance Reward",
+            "Waste Speed Reward"
+        ]
+
         while True:
             model.learn(training_interval,
-                        callback=[callback, SB3CombinedLogRewardCallback(reward_names=reward_legends)],
+                        callback=[callback, SB3CombinedLogRewardCallback(reward_names=parameter_names)],
                         reset_num_timesteps=False)  # can ignore callback if training_interval < callback target
             # model.save(f"models/{Worker.current_model}/exit_save")
             if model.num_timesteps >= mmr_model_target_count:

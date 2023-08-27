@@ -39,9 +39,45 @@ class DynamicGMMatchSim(SimMatch):
         return acts
 
 
+class ObservableMatch(SimMatch):
+    def __init__(self, reward_function: ObservableSB3CombinedLogReward, terminal_conditions, obs_builder, action_parser,
+                 state_setter, team_size,
+                 spawn_opponents):
+        super().__init__(reward_function, terminal_conditions, obs_builder, action_parser, state_setter, team_size,
+                         spawn_opponents)
+        self.ui_data = UIData()
+        self.monitored = False
+
+    def get_reset_state(self) -> list:
+
+        if self.ui_data.state_name and self.ui_data.rewards:
+            print("Got everything, writing in data.json")
+            with open("ui/data.json", "w") as f:
+                f.write(self.ui_data.jsonify())
+
+            print("Wrote in ui/data.json")
+            self.ui_data = UIData()
+
+        new_state = self._state_setter.build_wrapper(self.team_size, self.spawn_opponents)
+        name = self._state_setter.reset(new_state, True)
+        self.ui_data.state_name = name
+        print(f"Resetting with {self.agents}")
+
+        return new_state.format_state()
+
+    def get_rewards(self, state, done) -> Union[float, List]:
+
+        rewards = super().get_rewards(state, done)
+
+        if done:
+            self.ui_data.rewards = self._reward_fn.calculate_rew_for_players()
+        return rewards
+
+
 class ObservableDynamicGMMatchSim(DynamicGMMatchSim):
 
-    def __init__(self, reward_function: ObservableSB3CombinedLogReward, terminal_conditions, obs_builder, action_parser, state_setter, team_size,
+    def __init__(self, reward_function: ObservableSB3CombinedLogReward, terminal_conditions, obs_builder, action_parser,
+                 state_setter, team_size,
                  spawn_opponents, gm_weights):
         super().__init__(reward_function, terminal_conditions, obs_builder, action_parser, state_setter, team_size,
                          spawn_opponents, gm_weights)
