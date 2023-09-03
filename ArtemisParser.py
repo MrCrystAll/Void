@@ -42,4 +42,4 @@ class ArtemisParser(ActionParser):
         return gym.spaces.Discrete(len(self._lookup_table))
 
     def parse_actions(self, actions: Any, state: GameState) -> np.ndarray:
-        return self._lookup_table[actions]
+        return np.array(list(map(lambda x: self._lookup_table[int(x)], actions)))

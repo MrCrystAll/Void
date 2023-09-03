@@ -34,6 +34,7 @@ YAW_MAX = np.pi
 
 DEG_TO_RAD = np.pi / 180
 
+
 def mirror(car: CarWrapper, ball_x, ball_y):
     my_car = namedtuple('my_car', 'pos lin_vel rot ang_vel')
     if ball_x == ball_y == 0:
@@ -59,6 +60,7 @@ def mirror(car: CarWrapper, ball_x, ball_y):
     else:
         return None
     return my_car
+
 
 def set_pos(end_object: PhysicsObject, x: float = None, y: float = None, z: float = None):
     """
@@ -1251,7 +1253,6 @@ class DynamicScoredReplaySetter(ReplaySetter):
         self.scores = self.scores1s
         super().__init__(self.states1s)
 
-
     def generate_probabilities(self):
         scores = np.vectorize(probs_function)(self.scores)
         probs = scores / scores.sum()
@@ -1274,12 +1275,13 @@ class DynamicScoredReplaySetter(ReplaySetter):
         self.generate_probabilities()
         super(DynamicScoredReplaySetter, self).reset(state_wrapper)
 
+
 class RecoverySetter(StateSetter):
     def __init__(self, zero_boost_weight=0, zero_ball_vel_weight=0, ball_vel_mult=1, ball_zero_z=False):
         self.ball_zero_z = ball_zero_z
         self.ball_vel_mult = ball_vel_mult
-        self.zero_boost_weight=zero_boost_weight
-        self.zero_ball_vel_weight=zero_ball_vel_weight
+        self.zero_boost_weight = zero_boost_weight
+        self.zero_ball_vel_weight = zero_ball_vel_weight
         self.rng = np.random.default_rng()
         self.big_boosts = [BOOST_LOCATIONS[i] for i in [3, 4, 15, 18, 29, 30]]
         self.big_boosts = np.asarray(self.big_boosts)
@@ -1434,10 +1436,11 @@ class Chaindash(StateSetter):
             boost = 0
         for car in state_wrapper.cars:
             if car.id == 1:
-                car.set_pos(x + self.rng.uniform(-500, 500), max(-3900, y - self.rng.uniform(3000, 5000)), self.rng.uniform(50, 350))
-                car.set_rot(self.rng.uniform(-np.pi/8, np.pi/8),
+                car.set_pos(x + self.rng.uniform(-500, 500), max(-3900, y - self.rng.uniform(3000, 5000)),
+                            self.rng.uniform(50, 350))
+                car.set_rot(self.rng.uniform(-np.pi / 8, np.pi / 8),
                             self.rng.uniform(-np.pi, np.pi),
-                            self.rng.uniform(-np.pi/8, np.pi/8))
+                            self.rng.uniform(-np.pi / 8, np.pi / 8))
                 ball_sign = -1 if state_wrapper.cars[0].position[1] - y > 0 else 1
                 car.set_lin_vel(self.rng.uniform(-50, 50),
                                 ball_sign * self.rng.uniform(600, 2000),
@@ -1490,9 +1493,9 @@ class RandomEvenRecovery(StateSetter):
         for car in state_wrapper.cars:
             if car.id == 1:
                 car.set_pos(self.rng.uniform(-1000, 1000), y - 2500, self.rng.uniform(50, 350))
-                car.set_rot(self.rng.uniform(-np.pi/2, np.pi/2),
+                car.set_rot(self.rng.uniform(-np.pi / 2, np.pi / 2),
                             self.rng.uniform(-np.pi, np.pi),
-                            self.rng.uniform(-np.pi/2, np.pi/2))
+                            self.rng.uniform(-np.pi / 2, np.pi / 2))
                 car.set_lin_vel(self.rng.uniform(-1500, 1500),
                                 ball_sign * self.rng.uniform(-1500, 1500),
                                 self.rng.uniform(-50, -1))
@@ -1529,9 +1532,10 @@ class Curvedash(StateSetter):
         if zero_ball_vel:
             state_wrapper.ball.set_lin_vel(0, 0, 0)
         else:
-            state_wrapper.ball.set_lin_vel(self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_y == 0 and ball_x != 0 else 0,
-                                           self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_x == 0 and ball_y != 0 else 0,
-                                           0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
+            state_wrapper.ball.set_lin_vel(
+                self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_y == 0 and ball_x != 0 else 0,
+                self.ball_vel_mult * self.rng.uniform(-600, 600) if ball_x == 0 and ball_y != 0 else 0,
+                0 if self.zero_ball_vel_weight else self.rng.uniform(-200, 200))
         state_wrapper.ball.set_ang_vel(0, 0, 0)
         if self.rng.uniform() > self.zero_boost_weight:
             boost = self.rng.uniform(0, 1.000001)
@@ -1614,7 +1618,7 @@ class Walldash(StateSetter):
                     car.set_lin_vel(0, ball_sign * self.rng.uniform(300, 1000), 0)
                     car.set_ang_vel(0, 0, 0)
                 elif self.location == "90":
-                    #object_y = self.rng.choice([-1, 1])
+                    # object_y = self.rng.choice([-1, 1])
                     x = neg * (SIDE_WALL_X - 17)
                     y = self.rng.uniform(-3500, 3500)
                     car.set_pos(x,
@@ -1639,12 +1643,14 @@ class Walldash(StateSetter):
                         pitch_mod = object_y
                     else:
                         pitch_mod = -object_y
-                    car.set_rot(((180 if object_y == -1 else 0) + (45 * pitch_mod) + self.rng.uniform(-10, 10)) * DEG_TO_RAD,
-                                90 * DEG_TO_RAD,
-                                90 * DEG_TO_RAD * neg)
+                    car.set_rot(
+                        ((180 if object_y == -1 else 0) + (45 * pitch_mod) + self.rng.uniform(-10, 10)) * DEG_TO_RAD,
+                        90 * DEG_TO_RAD,
+                        90 * DEG_TO_RAD * neg)
                     speed = self.rng.uniform(self.min_car_vel, self.max_car_vel)
                     car.set_lin_vel(0, speed * object_y * 0.707, speed * 0.707 * (1 if object_pos_45 else -1))
-                    set_pos(end_object=self.end_object, x=x, y=y + (dist_yz * object_y * 0.707), z=z + (dist_yz * 0.5 * (1 if object_pos_45 else -1)))
+                    set_pos(end_object=self.end_object, x=x, y=y + (dist_yz * object_y * 0.707),
+                            z=z + (dist_yz * 0.5 * (1 if object_pos_45 else -1)))
                 elif self.location == "same_z":
                     object_y = self.rng.choice([-1, 1])
                     dist_yz = 2400
@@ -1727,6 +1733,7 @@ class Walldash(StateSetter):
 
 all_states = [DefaultState()]
 
+
 # DynamicScoredReplaySetter(
 #         "../replays/states_scores_duels.npz",
 #         "../replays/states_scores_doubles.npz",
@@ -1740,6 +1747,14 @@ class ProbabilisticStateSetter(StateSetter):
         self.verbose = verbose
         self.training = training
         self.states, self.probs = states, probs
+        self.current_size = random.randint(1, 3)
+
+    def build_wrapper(self, max_team_size: int, spawn_opponents: bool) -> StateWrapper:
+        wrapper = StateWrapper(blue_count=self.current_size, orange_count=self.current_size if spawn_opponents else 0)
+        print(f"Created wrapper with {self.current_size * 2 if spawn_opponents else self.current_size} agents")
+        self.current_size = random.randint(1, 3)
+
+        return wrapper
 
     def reset(self, state_wrapper: StateWrapper):
         if self.verbose >= 1:
@@ -1760,3 +1775,25 @@ class ProbabilisticStateSetter(StateSetter):
 
         # while not _check_positions(state_wrapper):
         selected_state.reset(state_wrapper)
+
+
+from rlgym_sim.utils.state_setters import StateSetter
+from rlgym_sim.utils.state_setters import StateWrapper, DefaultState
+
+
+class TeamSizeSetter(StateSetter):
+    def __init__(self):
+        super().__init__()
+        self.default = DefaultState()
+        self.count = 2  # Was 4 before
+
+    def build_wrapper(self, max_team_size: int, spawn_opponents: bool) -> StateWrapper:
+        wrapper = StateWrapper(blue_count=self.count, orange_count=self.count if spawn_opponents else 0)
+        self.count -= 1
+        if self.count == 0:
+            self.count = 4
+
+        return wrapper
+
+    def reset(self, state_wrapper: StateWrapper):
+        self.default.reset(state_wrapper)
